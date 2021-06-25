@@ -70,6 +70,7 @@ why3.conf
 /bin/isabelle_client.opt
 /bin/isabelle_client.byte
 /bin/isabelle_client
+/bin/python-interp.opt
 
 # /doc/
 /doc/*whizzy*

@@ -610,6 +610,14 @@ lib/plugins/microc.cma: $(MICROCCMO)
 lib/plugins/cfg.cmxs: $(addsuffix .cmx, $(CFGMODULES))
 lib/plugins/cfg.cma: $(addsuffix .cmo, $(CFGMODULES))
 
+# Python interpreter
+
+PYTHONINTERP = $(addprefix plugins/python/, py_ast py_parser py_lexer py_interp)
+PYTHONINTERPCMX = $(addsuffix .cmx, $(PYTHONINTERP))
+$(PYTHONINTERPCMX): INCLUDES += -I plugins/python
+bin/python-interp.opt: lib/why3/why3.cmxa $(PYTHONINTERPCMX)
+	$(OCAMLOPT) $(OFLAGS) $(INCLUDES) -I plugins/python -o $@ $(OLINKFLAGS) $^
+
 # depend and clean targets
 
 MAKEINC += $(PLUGDEP)

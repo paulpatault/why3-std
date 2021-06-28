@@ -2,7 +2,7 @@
 open Why3
 open Py_ast
 
-(* let input = ref (fun _ -> failwith "todo") 
+(* let input = ref (fun _ -> failwith "todo")
 let print = ref (fun _ -> failwith "todo") *)
 
 type value =
@@ -193,8 +193,7 @@ and stmt (env: env) (s: stmt): unit =
     end
   | Sbreak -> raise Break
   | Scontinue -> raise Continue
-  | Sassert _ -> ()
-  | Slabel _ -> ()
+  | Sassert _ | Slabel _ -> ()
 
 and block (env: env) (b: block): unit =
   match b with

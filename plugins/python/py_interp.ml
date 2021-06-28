@@ -31,6 +31,9 @@ type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
+let mk_new_env () =
+  {vars = Hashtbl.create 10; funcs= Hashtbl.create 10}
+
 exception Break
 exception Continue
 exception Return of value
@@ -46,27 +49,20 @@ let print_env e =
 let transform_idx v idx =
   if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
-let py_div n1 n2 =
-  let q = BigInt.euclidean_div n1 n2 in
-  if BigInt.sign n2 >= 0 then q
+let py_div_mod n1 n2 =
+  let q, r = BigInt.euclidean_div_mod n1 n2 in
+  if BigInt.sign n2 >= 0 then (q, r)
   else
-    let m = BigInt.euclidean_mod n1 n2 in
-    if BigInt.sign m >= 0 then BigInt.sub q BigInt.one
-    else q
-
-let py_mod n1 n2 =
-  let r = BigInt.euclidean_mod n1 n2 in
-  if BigInt.sign n2 >= 0 then r
-  else
-    if BigInt.sign r > 0 then BigInt.add r n2
-    else r
+    let q = if BigInt.sign r >= 0 then BigInt.sub q BigInt.one else q in
+    let r = if BigInt.sign r > 0 then BigInt.add r n2 else r in
+    (q, r)
 
 let binop_op = function
   | Badd -> BigInt.add
   | Bsub -> BigInt.sub
   | Bmul -> BigInt.mul
-  | Bdiv -> py_div
-  | Bmod -> py_mod
+  | Bdiv -> fun e1 e2 -> fst (py_div_mod e1 e2)
+  | Bmod -> fun e1 e2 -> snd (py_div_mod e1 e2)
   | _    -> assert false
 
 let binop_comp = function
@@ -113,8 +109,13 @@ let rec expr (env: env) (e: expr): value =
       | _ -> assert false end
   | Ecall (id, params) ->
       begin try
-        let _f = Hashtbl.find env.funcs id.id_str in
-        assert false
+        let id_params, b = Hashtbl.find env.funcs id.id_str in
+        let envf = mk_new_env () in
+        begin try
+          List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
+          begin try block envf b; Vnone
+          with Return v -> v end
+        with Invalid_argument _s -> assert false end
       with Not_found -> assert false end
   | Edot (e, id, params) ->
       assert false
@@ -210,9 +211,7 @@ and bool (env: env) (e: expr): bool =
   | _ -> assert false
 
 let interp file =
-  let vars = Hashtbl.create 10 in
-  let funcs = Hashtbl.create 10 in
-  let env = { vars;funcs } in
+  let env = mk_new_env () in
   block env file;
   print_env env
 

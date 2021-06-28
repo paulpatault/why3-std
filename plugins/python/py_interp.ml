@@ -164,10 +164,10 @@ and stmt (env: env) (s: stmt): unit =
       with Invalid_argument s -> assert false end
       | _ -> assert false
     end
-  | Sassert _ -> assert false (* of Expr.assertion_kind * Ptree.term *)
+  | Sassert _ -> () (* of Expr.assertion_kind * Ptree.term *)
   | Sbreak -> assert false
   | Scontinue -> assert false
-  | Slabel id -> assert false
+  | Slabel _ -> ()
 
 and block (env: env) (b: block): unit =
   match b with
@@ -175,7 +175,9 @@ and block (env: env) (b: block): unit =
   | e::k ->
       begin match e with
       | Dstmt s -> stmt env s
-      | Ddef (id, params, _, b) -> assert false
+      | Ddef (id, params, _, b) ->
+        Hashtbl.remove env.funcs id.id_str;
+        Hashtbl.add env.funcs id.id_str (List.map (fun (e: Py_ast.ident) -> e.id_str) params, b)
       | Dlogic _ | Dimport _ -> ()
       end;
       block env k

@@ -31,6 +31,8 @@ type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
+let transform_idx v idx = 
+  if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
 let py_div n1 n2 =
   let q = BigInt.euclidean_div n1 n2 in
@@ -119,8 +121,7 @@ let rec expr (env: env) (e: expr): value =
   | Eget (e1, e2) ->
       begin match expr env e1, expr env e2 with
         | Vlist v, Vint i  ->
-          let i = if BigInt.sign i < 0 then BigInt.add (BigInt.of_int (Vector.length v)) i else i in
-          begin try Vector.get v (BigInt.to_int i)
+          begin try Vector.get v (transform_idx v i |> BigInt.to_int)
           with Invalid_argument _s -> assert false end
         | _ -> assert false
       end
@@ -148,7 +149,16 @@ and stmt (env: env) (s: stmt): unit =
       end
   | Sfor (id, e, _, b) -> assert false
   | Seval e -> expr env e |> print_value; Format.printf "\n"
-  | Sset (e1, e2, e3) -> assert false
+  | Sset (e1, e2, e3) -> 
+    let e1 = expr env e1 in
+    let e2 = expr env e2 in
+    let e3 = expr env e3 in
+    begin match e1, e2, e3 with
+      | Vlist v, Vint i, e -> 
+      begin try Vector.set v (transform_idx v i |> BigInt.to_int) e
+      with Invalid_argument s -> assert false end
+      | _ -> assert false
+    end
   | Sassert _ -> assert false (* of Expr.assertion_kind * Ptree.term *)
   | Sbreak -> assert false
   | Scontinue -> assert false

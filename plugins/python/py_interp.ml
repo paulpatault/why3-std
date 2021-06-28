@@ -31,6 +31,9 @@ type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
+exception Break
+exception Continue
+
 let print_env e =
   Printf.printf "ENV VARS: [\n";
   Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;
@@ -151,7 +154,13 @@ and stmt (env: env) (s: stmt): unit =
       Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
       begin match expr env e with
-      | Vbool true  -> block env b; stmt env s
+      | Vbool true  ->
+          begin try
+            block env b; stmt env s
+          with
+            | Break -> ()
+            | Continue -> stmt env s
+          end
       | Vbool false -> ()
       | _ -> assert false
       end
@@ -177,8 +186,8 @@ and stmt (env: env) (s: stmt): unit =
       | _ -> assert false
     end
   | Sassert _ -> ()
-  | Sbreak -> assert false
-  | Scontinue -> assert false
+  | Sbreak -> raise Break
+  | Scontinue -> raise Continue
   | Slabel _ -> ()
 
 and block (env: env) (b: block): unit =

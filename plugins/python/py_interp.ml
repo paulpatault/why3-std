@@ -181,8 +181,9 @@ and stmt (env: env) (s: stmt): unit =
     let e3 = expr env e3 in
     begin match e1, e2, e3 with
       | Vlist v, Vint i, e ->
-      begin try Vector.set v (transform_idx v i |> BigInt.to_int) e
-      with Invalid_argument s -> assert false end
+          begin try
+            Vector.set v (transform_idx v i |> BigInt.to_int) e
+          with Invalid_argument s -> assert false end
       | _ -> assert false
     end
   | Sbreak -> raise Break

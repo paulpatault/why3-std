@@ -31,6 +31,9 @@ type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
+let mk_new_env () = 
+  {vars = Hashtbl.create 10; funcs= Hashtbl.create 10}
+
 let print_env e =
   Printf.printf "ENV VARS: [\n";
   Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;
@@ -108,9 +111,12 @@ let rec expr (env: env) (e: expr): value =
       | Unot, Vbool b -> Vbool (not b)
       | _ -> assert false end
   | Ecall (id, params) ->
-      begin try
-        let _f = Hashtbl.find env.funcs id.id_str in
-        assert false
+      begin try 
+        let id_params, b = Hashtbl.find env.funcs id.id_str in
+        let envf = mk_new_env () in
+        List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
+        begin try block envf b; Vnone
+        with Return v -> v end
       with Not_found -> assert false end
   | Edot (e, id, params) ->
       assert false
@@ -195,9 +201,7 @@ and block (env: env) (b: block): unit =
       block env k
 
 let interp file =
-  let vars = Hashtbl.create 10 in
-  let funcs = Hashtbl.create 10 in
-  let env = { vars;funcs } in
+  let env = mk_new_env () in
   block env file;
   print_env env
 

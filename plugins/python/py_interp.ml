@@ -152,7 +152,16 @@ and stmt (env: env) (s: stmt): unit =
       | Vbool false -> ()
       | _ -> assert false
       end
-  | Sfor (id, e, _, b) -> assert false
+  | Sfor (id, e, _, b) ->
+      let e = expr env e in
+      begin match e with
+      | Vlist l ->
+          Vector.iter (fun li ->
+            Hashtbl.add env.vars id.id_str li;
+            block env b
+          ) l
+      | _ -> assert false
+      end;
   | Seval e -> Printf.printf "%s\n" (value_to_string (expr env e)); Format.printf "\n"
   | Sset (e1, e2, e3) ->
     let e1 = expr env e1 in
@@ -164,7 +173,7 @@ and stmt (env: env) (s: stmt): unit =
       with Invalid_argument s -> assert false end
       | _ -> assert false
     end
-  | Sassert _ -> () (* of Expr.assertion_kind * Ptree.term *)
+  | Sassert _ -> ()
   | Sbreak -> assert false
   | Scontinue -> assert false
   | Slabel _ -> ()

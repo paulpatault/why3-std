@@ -136,7 +136,10 @@ and stmt (env: env) (s: stmt): unit =
       | _ -> assert false
       end
   | Sreturn e -> assert false
-  | Sassign (id, e) -> assert false
+  | Sassign (id, e) -> 
+    let e = expr env e in
+    Hashtbl.remove env.vars id.id_str;
+    Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) -> assert false
   | Sfor (id, e, _, b) -> assert false
   | Seval e -> expr env e |> print_value; Format.printf "\n"

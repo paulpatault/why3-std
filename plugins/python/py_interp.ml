@@ -12,24 +12,29 @@ type value =
   | Vlist   of value Vector.t
   | Vstring of string
 
-let rec print_value = function
-  | Vnone       -> Format.printf "None"
-  | Vbool true  -> Format.printf "True"
-  | Vbool false -> Format.printf "False"
-  | Vint n      -> Format.printf "%s" (BigInt.to_string n)
-  | Vstring s   -> Format.printf "%s" s
+let rec value_to_string = function
+  | Vnone       -> Format.sprintf "None"
+  | Vbool true  -> Format.sprintf "True"
+  | Vbool false -> Format.sprintf "False"
+  | Vint n      -> Format.sprintf "%s" (BigInt.to_string n)
+  | Vstring s   -> Format.sprintf "%s" s
   | Vlist v ->
     let len = Vector.length v in
-    Format.printf "[";
+    let res = ref "[" in
     for i = 0 to len-1 do
-      print_value (Vector.get v i);
-      if i < len-1 then Format.printf ", "
+      res := !res ^ value_to_string (Vector.get v i);
+      if i < len-1 then res := !res ^ ", "
     done;
-    Format.printf "]"
+    res := !res ^ "]"; !res
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
+
+let print_env e =
+  Printf.printf "ENV: [\n";
+  Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;
+  Printf.printf "]\n"
 
 
 let py_div n1 n2 =
@@ -84,7 +89,13 @@ let rec expr (env: env) (e: expr): value =
       | _ -> assert false end
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
-      | Vint n1, Vint n2 -> let b = binop_comp b in Vbool (b n1 n2)
+      | Vint n1, Vint n2 ->
+          let b = binop_comp b in
+          Printf.printf "%s %s %b\n"
+          (BigInt.to_string n1)
+          (BigInt.to_string n2)
+          (b n1 n2);
+           Vbool (b n1 n2)
       | _ -> assert false end
   | Ebinop (Band | Bor as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
@@ -110,11 +121,11 @@ let rec expr (env: env) (e: expr): value =
   | Emake (e1, e2) ->
       let e1 = expr env e1 in
       let e2 = expr env e2 in
-      let n = match e2 with
-      | Vint n -> BigInt.to_int n
-      | _ -> assert false in
-      let v = Vector.make ~dummy:Vnone n e1 in
-      Vlist v
+      let n =
+        match e2 with
+        | Vint n -> BigInt.to_int n
+        | _ -> assert false in
+      Vlist (Vector.make ~dummy:Vnone n e1)
 
   | Eget (e1, e2) ->
       begin match expr env e1, expr env e2 with
@@ -136,18 +147,19 @@ and stmt (env: env) (s: stmt): unit =
       | _ -> assert false
       end
   | Sreturn e -> assert false
-  | Sassign (id, e) -> 
-    let e = expr env e in
-    Hashtbl.remove env.vars id.id_str;
-    Hashtbl.add env.vars id.id_str e
+  | Sassign (id, e) ->
+      let e = expr env e in
+      Hashtbl.remove env.vars id.id_str;
+      Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
+      (* print_env env; *)
       begin match expr env e with
-      | Vbool true  -> block env b
+      | Vbool true  -> block env b; stmt env s
       | Vbool false -> ()
       | _ -> assert false
       end
   | Sfor (id, e, _, b) -> assert false
-  | Seval e -> expr env e |> print_value; Format.printf "\n"
+  | Seval e -> Printf.printf "%s\n" (value_to_string (expr env e)); Format.printf "\n"
   | Sset (e1, e2, e3) -> assert false
   | Sassert _ -> assert false (* of Expr.assertion_kind * Ptree.term *)
   | Sbreak -> assert false
@@ -170,7 +182,6 @@ let interp file =
   let funcs = Hashtbl.create 10 in
   let env = { vars;funcs } in
   block env file
-  (* Format.printf "42@." *)
 
 let () =
   let file = Sys.argv.(1) in

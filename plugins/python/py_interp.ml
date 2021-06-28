@@ -63,12 +63,12 @@ let binop_op = function
   | _    -> assert false
 
 let binop_comp = function
-  | Beq  -> (=)
-  | Bneq -> (<>)
-  | Blt  -> (<)
-  | Ble  -> (<=)
-  | Bgt  -> (>)
-  | Bge  -> (>=)
+  | Beq  -> BigInt.eq
+  | Bneq -> fun e1 e2 -> not (BigInt.eq e1 e2)
+  | Blt  -> BigInt.lt
+  | Ble  -> BigInt.le
+  | Bgt  -> BigInt.gt
+  | Bge  -> BigInt.ge
   | _    -> assert false
 
 let binop_logic = function
@@ -92,12 +92,7 @@ let rec expr (env: env) (e: expr): value =
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vint n1, Vint n2 ->
-          let b = binop_comp b in
-          Printf.printf "%s %s %b\n"
-          (BigInt.to_string n1)
-          (BigInt.to_string n2)
-          (b n1 n2);
-           Vbool (b n1 n2)
+          let b = binop_comp b in Vbool (b n1 n2)
       | _ -> assert false end
   | Ebinop (Band | Bor as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
@@ -128,7 +123,6 @@ let rec expr (env: env) (e: expr): value =
         | Vint n -> BigInt.to_int n
         | _ -> assert false in
       Vlist (Vector.make ~dummy:Vnone n e1)
-
   | Eget (e1, e2) ->
       begin match expr env e1, expr env e2 with
         | Vlist v, Vint i  ->
@@ -153,7 +147,6 @@ and stmt (env: env) (s: stmt): unit =
       Hashtbl.remove env.vars id.id_str;
       Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
-      (* print_env env; *)
       begin match expr env e with
       | Vbool true  -> block env b; stmt env s
       | Vbool false -> ()

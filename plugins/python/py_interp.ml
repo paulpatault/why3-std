@@ -110,7 +110,12 @@ let rec expr (env: env) (e: expr): value =
   | Emake (e1, e2) ->
       assert false
   | Eget (e1, e2) ->
-      assert false
+      begin match expr env e1, expr env e2 with
+        | Vlist v, Vint i  -> 
+          let i = if BigInt.sign i < 0 then BigInt.add (BigInt.of_int (Vector.length v)) i else i in
+          Vector.get v (BigInt.to_int i)
+        | _ -> assert false
+      end
 
 and stmt (env: env) (s: stmt): unit =
   match s.stmt_desc with

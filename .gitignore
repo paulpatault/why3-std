@@ -305,3 +305,5 @@ pvsbin/
 
 /trash
 trywhy3.tar.gz
+
+plugins/python/test_interp.py

@@ -33,6 +33,7 @@ type env = { vars: var; funcs: func; }
 
 exception Break
 exception Continue
+exception Return of value
 
 let print_env e =
   Printf.printf "ENV VARS: [\n";
@@ -147,7 +148,9 @@ and stmt (env: env) (s: stmt): unit =
       | Vbool false -> block env b2
       | _ -> assert false
       end
-  | Sreturn e -> assert false
+  | Sreturn e ->
+      let e = expr env e in
+      raise (Return e)
   | Sassign (id, e) ->
       let e = expr env e in
       Hashtbl.remove env.vars id.id_str;

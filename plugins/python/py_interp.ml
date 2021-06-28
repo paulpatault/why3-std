@@ -32,11 +32,14 @@ type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
 let print_env e =
-  Printf.printf "ENV: [\n";
+  Printf.printf "ENV VARS: [\n";
   Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;
+  Printf.printf "]\n";
+  Printf.printf "ENV FUNCS: [\n";
+  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs;
   Printf.printf "]\n"
 
-let transform_idx v idx = 
+let transform_idx v idx =
   if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
 let py_div n1 n2 =
@@ -195,7 +198,8 @@ let interp file =
   let vars = Hashtbl.create 10 in
   let funcs = Hashtbl.create 10 in
   let env = { vars;funcs } in
-  block env file
+  block env file;
+  print_env env
 
 let () =
   let file = Sys.argv.(1) in

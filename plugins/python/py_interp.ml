@@ -108,7 +108,14 @@ let rec expr (env: env) (e: expr): value =
       List.iter (fun e -> Vector.push v (expr env e)) l;
       Vlist v
   | Emake (e1, e2) ->
-      assert false
+      let e1 = expr env e1 in
+      let e2 = expr env e2 in
+      let n = match e2 with
+      | Vint n -> BigInt.to_int n
+      | _ -> assert false in
+      let v = Vector.make ~dummy:Vnone n e1 in
+      Vlist v
+
   | Eget (e1, e2) ->
       assert false
 

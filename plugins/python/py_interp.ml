@@ -120,7 +120,8 @@ let rec expr (env: env) (e: expr): value =
       begin match expr env e1, expr env e2 with
         | Vlist v, Vint i  -> 
           let i = if BigInt.sign i < 0 then BigInt.add (BigInt.of_int (Vector.length v)) i else i in
-          Vector.get v (BigInt.to_int i)
+          begin try Vector.get v (BigInt.to_int i)
+          with Invalid_argument _s -> assert false end
         | _ -> assert false
       end
 

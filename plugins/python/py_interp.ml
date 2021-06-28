@@ -49,27 +49,20 @@ let print_env e =
 let transform_idx v idx =
   if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
-let py_div n1 n2 =
-  let q = BigInt.euclidean_div n1 n2 in
-  if BigInt.sign n2 >= 0 then q
+let py_div_mod n1 n2 =
+  let q, r = BigInt.euclidean_div_mod n1 n2 in
+  if BigInt.sign n2 >= 0 then (q, r)
   else
-    let m = BigInt.euclidean_mod n1 n2 in
-    if BigInt.sign m >= 0 then BigInt.sub q BigInt.one
-    else q
-
-let py_mod n1 n2 =
-  let r = BigInt.euclidean_mod n1 n2 in
-  if BigInt.sign n2 >= 0 then r
-  else
-    if BigInt.sign r > 0 then BigInt.add r n2
-    else r
+    let q = if BigInt.sign r >= 0 then BigInt.sub q BigInt.one else q in
+    let r = if BigInt.sign r > 0 then BigInt.add r n2 else r in
+    (q, r)
 
 let binop_op = function
   | Badd -> BigInt.add
   | Bsub -> BigInt.sub
   | Bmul -> BigInt.mul
-  | Bdiv -> py_div
-  | Bmod -> py_mod
+  | Bdiv -> fun e1 e2 -> fst (py_div_mod e1 e2)
+  | Bmod -> fun e1 e2 -> snd (py_div_mod e1 e2)
   | _    -> assert false
 
 let binop_comp = function
@@ -118,9 +111,11 @@ let rec expr (env: env) (e: expr): value =
       begin try 
         let id_params, b = Hashtbl.find env.funcs id.id_str in
         let envf = mk_new_env () in
-        List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
-        begin try block envf b; Vnone
-        with Return v -> v end
+        begin try 
+          List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
+          begin try block envf b; Vnone
+          with Return v -> v end
+        with Invalid_argument _s -> assert false end
       with Not_found -> assert false end
   | Edot (e, id, params) ->
       assert false
@@ -191,7 +186,7 @@ and stmt (env: env) (s: stmt): unit =
     begin match e1, e2, e3 with
       | Vlist v, Vint i, e ->
       begin try Vector.set v (transform_idx v i |> BigInt.to_int) e
-      with Invalid_argument s -> assert false end
+      with Invalid_argument _s -> assert false end
       | _ -> assert false
     end
   | Sassert _ -> ()

@@ -2,7 +2,7 @@
 open Why3
 open Py_ast
 
-(* let input = ref (fun _ -> failwith "todo")
+(* let input = ref (fun _ -> failwith "todo") 
 let print = ref (fun _ -> failwith "todo") *)
 
 type value =
@@ -27,12 +27,13 @@ let rec value_to_string = function
     done;
     res := !res ^ "]"; !res
 
+
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
 let mk_new_env () =
-  {vars = Hashtbl.create 10; funcs= Hashtbl.create 10}
+  { vars = Hashtbl.create 10; funcs = Hashtbl.create 10 }  
 
 exception Break
 exception Continue
@@ -110,7 +111,7 @@ let rec expr (env: env) (e: expr): value =
   | Ecall (id, params) ->
       begin try
         let id_params, b = Hashtbl.find env.funcs id.id_str in
-        let envf = mk_new_env () in
+        let envf = {vars = Hashtbl.create 10; funcs = env.funcs} in
         begin try
           List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
           begin try block envf b; Vnone

@@ -33,6 +33,10 @@ type env = { vars: var; funcs: func; }
 
 let mk_new_env () = 
   {vars = Hashtbl.create 10; funcs= Hashtbl.create 10}
+  
+exception Break
+exception Continue
+exception Return of value
 
 let print_env e =
   Printf.printf "ENV VARS: [\n";
@@ -150,14 +154,22 @@ and stmt (env: env) (s: stmt): unit =
       | Vbool false -> block env b2
       | _ -> assert false
       end
-  | Sreturn e -> assert false
+  | Sreturn e ->
+      let e = expr env e in
+      raise (Return e)
   | Sassign (id, e) ->
       let e = expr env e in
       Hashtbl.remove env.vars id.id_str;
       Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
       begin match expr env e with
-      | Vbool true  -> block env b; stmt env s
+      | Vbool true  ->
+          begin try
+            block env b; stmt env s
+          with
+            | Break -> ()
+            | Continue -> stmt env s
+          end
       | Vbool false -> ()
       | _ -> assert false
       end
@@ -183,8 +195,8 @@ and stmt (env: env) (s: stmt): unit =
       | _ -> assert false
     end
   | Sassert _ -> ()
-  | Sbreak -> assert false
-  | Scontinue -> assert false
+  | Sbreak -> raise Break
+  | Scontinue -> raise Continue
   | Slabel _ -> ()
 
 and block (env: env) (b: block): unit =

@@ -156,25 +156,22 @@ and stmt (env: env) (s: stmt): unit =
       Hashtbl.remove env.vars id.id_str;
       Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
-      begin match expr env e with
-      | Vbool true  ->
-          begin try
-            block env b; stmt env s
-          with
-            | Break -> ()
-            | Continue -> stmt env s
-          end
-      | Vbool false -> ()
-      | _ -> assert false
-      end
+      begin try
+        while bool env e do
+          begin try block env b
+          with Continue -> () end
+        done;
+      with Break -> () end
   | Sfor (id, e, _, b) ->
-      let e = expr env e in
-      begin match e with
+      begin match expr env e with
       | Vlist l ->
-          Vector.iter (fun li ->
-            Hashtbl.add env.vars id.id_str li;
-            block env b
-          ) l
+          begin try
+            Vector.iter (fun li ->
+              Hashtbl.add env.vars id.id_str li;
+              try block env b
+              with Continue -> ()
+            ) l
+          with Break -> () end
       | _ -> assert false
       end;
   | Seval e -> Printf.printf "%s\n" (value_to_string (expr env e)); Format.printf "\n"
@@ -188,9 +185,9 @@ and stmt (env: env) (s: stmt): unit =
       with Invalid_argument s -> assert false end
       | _ -> assert false
     end
-  | Sassert _ -> ()
   | Sbreak -> raise Break
   | Scontinue -> raise Continue
+  | Sassert _ -> ()
   | Slabel _ -> ()
 
 and block (env: env) (b: block): unit =
@@ -205,6 +202,11 @@ and block (env: env) (b: block): unit =
       | Dlogic _ | Dimport _ -> ()
       end;
       block env k
+
+and bool (env: env) (e: expr): bool =
+  match expr env e with
+  | Vbool b -> b
+  | _ -> assert false
 
 let interp file =
   let vars = Hashtbl.create 10 in

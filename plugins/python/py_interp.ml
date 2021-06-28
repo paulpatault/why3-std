@@ -118,7 +118,7 @@ let rec expr (env: env) (e: expr): value =
 
   | Eget (e1, e2) ->
       begin match expr env e1, expr env e2 with
-        | Vlist v, Vint i  -> 
+        | Vlist v, Vint i  ->
           let i = if BigInt.sign i < 0 then BigInt.add (BigInt.of_int (Vector.length v)) i else i in
           begin try Vector.get v (BigInt.to_int i)
           with Invalid_argument _s -> assert false end
@@ -137,7 +137,12 @@ and stmt (env: env) (s: stmt): unit =
       end
   | Sreturn e -> assert false
   | Sassign (id, e) -> assert false
-  | Swhile (e, _, _, b) -> assert false
+  | Swhile (e, _, _, b) ->
+      begin match expr env e with
+      | Vbool true  -> block env b
+      | Vbool false -> ()
+      | _ -> assert false
+      end
   | Sfor (id, e, _, b) -> assert false
   | Seval e -> expr env e |> print_value; Format.printf "\n"
   | Sset (e1, e2, e3) -> assert false

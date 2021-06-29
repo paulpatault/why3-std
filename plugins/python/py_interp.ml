@@ -21,7 +21,8 @@ let rec value_to_string ftm = function
   | Vlist v     -> Format.sprintf "[%a]" list_content_str (v, 0)
 
 and list_content_str ftm (vec, i) =
-  if i + 1 = Vector.length vec
+  if i = Vector.length vec then ""
+  else if i + 1 = Vector.length vec
   then Format.sprintf "%a" value_to_string (Vector.get vec i)
   else Format.sprintf "%a, %a" value_to_string (Vector.get vec i) list_content_str (vec, (i+1))
 
@@ -35,6 +36,27 @@ let mk_new_env () =
 exception Break
 exception Continue
 exception Return of value
+
+let rec py_compare a' b' =
+  match a', b' with
+  | Vbool a, Vbool b -> Bool.compare a b
+  | Vint a, Vint b -> BigInt.compare a b
+  | Vstring a, Vstring b -> String.compare a b
+  | Vlist a, Vlist b ->
+      begin try
+        let vtol v =
+          let rec aux acc = function
+            | -1 -> acc
+            | i -> aux (Vector.get v i :: acc) (i-1)
+          in aux [] (Vector.length v - 1) in
+        List.compare py_compare (vtol a) (vtol b)
+      with
+        Invalid_argument _ ->
+          print_endline (Format.sprintf "a=%a@." value_to_string a');
+          print_endline (Format.sprintf "b=%a@." value_to_string b');
+          assert false
+      end
+  | _ -> assert false
 
 module Primitives =
   struct
@@ -134,18 +156,7 @@ module Primitives =
 
     let sort = function
       | [Vlist l] ->
-          let rec comp a b =
-            match a, b with
-            | Vbool a, Vbool b -> Bool.compare a b
-            | Vint a, Vint b -> BigInt.compare a b
-            | Vstring a, Vstring b -> String.compare a b
-            | Vlist a, Vlist b ->
-                if Vector.length a = 0 then -1
-                else if Vector.length b = 0 then 1
-                else comp (Vector.get a 0) (Vector.get b 0)
-            | _ -> assert false
-          in
-          Vector.sort comp l;
+          Vector.sort py_compare l;
           Vnone
       | _ -> assert false
 

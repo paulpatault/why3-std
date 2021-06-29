@@ -43,7 +43,7 @@ module Primitives =
   struct
 
     type t = (string, value list -> value) Hashtbl.t
-    let func_table:t = Hashtbl.create 10
+    let func_table:t = Hashtbl.create 7
 
     let pop vl =
       match vl with
@@ -53,10 +53,9 @@ module Primitives =
         | _ -> assert false
 
     exception Invalid_range
-
     let range vl =
       match vl with
-        | [Vint lo, Vint hi] ->
+        | [Vint lo; Vint hi] ->
           let lo = BigInt.to_int lo in
           let hi = BigInt.to_int hi in
           if lo > hi then raise Invalid_range
@@ -66,11 +65,7 @@ module Primitives =
               Vector.set v (i - lo) (Vint (BigInt.of_int i));
             done;
             Vlist v
-        | _ -> assert false
-
-    let range3 vl =
-      match vl with
-        | [Vint le, Vint ri, Vint step] ->
+        | [Vint le; Vint ri; Vint step] -> 
           let le = BigInt.to_int le in
           let ri = BigInt.to_int ri in
           let step = BigInt.to_int step in
@@ -85,11 +80,11 @@ module Primitives =
         | _ -> assert false
 
     let append = function
-      | [Vlist v, x] -> Vector.push v x; Vnone
+      | [Vlist v; x] -> Vector.push v x; Vnone
       | _ -> assert false
 
     let copy = function
-      | [Vlist l] -> Vector.copy l
+      | [Vlist l] -> Vlist (Vector.copy l)
       | _ -> assert false
 
     let clear = function
@@ -122,6 +117,15 @@ module Primitives =
           Vector.sort comp l;
           Vnone
       | _ -> assert false
+    
+    let () = 
+      Hashtbl.add func_table "pop" pop;
+      Hashtbl.add func_table "range" range; 
+      Hashtbl.add func_table "append" append; 
+      Hashtbl.add func_table "copy" copy; 
+      Hashtbl.add func_table "clear" clear; 
+      Hashtbl.add func_table "reverse" reverse; 
+      Hashtbl.add func_table "sort" sort;
 
   end
 
@@ -208,7 +212,10 @@ let rec expr (env: env) (e: expr): value =
         with Invalid_argument _s -> assert false end
       with Not_found -> assert false end
   | Edot (e, id, params) ->
-      assert false
+      begin try
+        let f = Hashtbl.find Primitives.func_table id.id_str in
+        f (List.map (fun e -> expr env e) (e::params))
+      with Not_found -> assert false end
   | Elist l ->
       let v = Vector.create ~dummy:Vnone ~capacity:0 in
       List.iter (fun e -> Vector.push v (expr env e)) l;

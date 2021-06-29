@@ -18,21 +18,12 @@ let rec value_to_string ftm = function
   | Vbool false -> "False"
   | Vint n      -> BigInt.to_string n
   | Vstring s   -> s
-  | Vlist v ->
-    let len = Vector.length v in
-    let res = ref "[" in
-    for i = 0 to len-1 do
-      res := Format.sprintf "%s%s" !res (value_to_string ftm (Vector.get v i));
-      if i < len-1 then res := Format.sprintf "%s%s" !res ", "
-    done;
-    res := Format.sprintf "%s%s" !res "]"; !res
-  (* | Vlist v     -> Format.sprintf "[%a]" list_str v
+  | Vlist v     -> Format.sprintf "[%a]" list_content_str (v, 0)
 
-and list_str ftm vec =
-  for i=0 to Vector.length vec do
-    ()
-  done;
-  Vector.iter (fun e -> value_to_string e) vec *)
+and list_content_str ftm (vec, i) =
+  if i + 1 = Vector.length vec
+  then Format.sprintf "%a" value_to_string (Vector.get vec i)
+  else Format.sprintf "%a, %a" value_to_string (Vector.get vec i) list_content_str (vec, (i+1))
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
@@ -72,15 +63,15 @@ module Primitives =
     let print vl =
       let rec aux vl =
         match vl with
-          | v::[] -> Format.sprintf "%s" (value_to_string v)
-          | v::lv -> let s = Format.sprintf "%s" (aux lv) in Format.sprintf "%s %s" (value_to_string v) s
+          | [v] -> Format.sprintf "%a" value_to_string v
+          | v::lv -> Format.sprintf "%a %s" value_to_string v (aux lv)
           | _ -> ""
       in
       Format.printf "%s\n" (aux vl);
       Vnone
 
-
     exception Invalid_range
+
     let range vl =
       let aux lo hi =
         let lo = BigInt.to_int lo in
@@ -88,7 +79,7 @@ module Primitives =
         if lo > hi then raise Invalid_range
         else
           let v = Vector.make (hi - lo) (Vint BigInt.zero) in
-          for i = lo to hi - 1 do
+          for i=lo to hi-1 do
             Vector.set v (i - lo) (Vint (BigInt.of_int i));
           done;
           Vlist v
@@ -104,7 +95,7 @@ module Primitives =
           else
             let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
             let v = Vector.make len (Vint BigInt.zero) in
-            for i = 0 to len-1 do
+            for i=0 to len-1 do
               Vector.set v i (Vint (BigInt.of_int (le + i * step)));
             done;
             Vlist v
@@ -175,10 +166,10 @@ module Primitives =
 
 let print_env e =
   Printf.printf "ENV VARS: [\n";
-  Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;
+  (* Hashtbl.iter (fun s v -> Format.sprintf "  %s := %a@." s value_to_string v) e.vars;
   Printf.printf "]\n";
   Printf.printf "ENV FUNCS: [\n";
-  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs;
+  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs; *)
   Printf.printf "]\n"
 
 let transform_idx v idx =

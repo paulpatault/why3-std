@@ -12,20 +12,18 @@ type value =
   | Vlist   of value Vector.t
   | Vstring of string
 
-let rec value_to_string = function
-  | Vnone       -> Format.sprintf "None"
-  | Vbool true  -> Format.sprintf "True"
-  | Vbool false -> Format.sprintf "False"
-  | Vint n      -> Format.sprintf "%s" (BigInt.to_string n)
-  | Vstring s   -> Format.sprintf "%s" s
-  | Vlist v ->
-    let len = Vector.length v in
-    let res = ref "[" in
-    for i = 0 to len-1 do
-      res := !res ^ value_to_string (Vector.get v i);
-      if i < len-1 then res := !res ^ ", "
-    done;
-    res := !res ^ "]"; !res
+let rec value_to_string ftm = function
+  | Vnone       -> "None"
+  | Vbool true  -> "True"
+  | Vbool false -> "False"
+  | Vint n      -> BigInt.to_string n
+  | Vstring s   -> s
+  | Vlist v     -> Format.sprintf "[%a]" list_str v
+
+and list_str ftm vec =
+  for i=0 to Vector.length vec do
+  done;
+  Vector.iter (fun e -> value_to_string e) vec
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t

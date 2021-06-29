@@ -27,7 +27,6 @@ let rec value_to_string = function
     done;
     res := !res ^ "]"; !res
 
-
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
@@ -43,28 +42,47 @@ module Primitives =
   struct
 
     type t = (string, value list -> value) Hashtbl.t
-    let func_table:t = Hashtbl.create 7
+    let list_func_table:t = Hashtbl.create 6
+    let std_func_table:t = Hashtbl.create 6
 
-    let pop vl =
+    let input vl = 
+      let aux s =
+        Printf.printf "%s" s;
+        read_line ()
+      in
       match vl with
-        | [Vlist v] ->
-            begin try Vector.pop v
-            with Vector.Empty -> assert false end
+        | [Vstring s] -> Vstring (aux s)
+        | [] -> Vstring (aux "")
+        | _ -> assert false
+
+    let int vl = 
+      match vl with
+        | [Vint i] -> Vint i
+        | [Vbool b] -> if b then Vint (BigInt.one) else Vint (BigInt.zero)
+        | [Vstring s] -> begin try Vint (BigInt.of_string s) with Failure s -> assert false end
+        | _ -> assert false
+
+    let print vl = 
+      match vl with
+        | [v] -> Printf.printf "%s\n" (value_to_string v); Vnone
         | _ -> assert false
 
     exception Invalid_range
     let range vl =
+      let aux lo hi = 
+        let lo = BigInt.to_int lo in
+        let hi = BigInt.to_int hi in
+        if lo > hi then raise Invalid_range
+        else
+          let v = Vector.make (hi - lo) (Vint BigInt.zero) in
+          for i = lo to hi - 1 do
+            Vector.set v (i - lo) (Vint (BigInt.of_int i));
+          done;
+          Vlist v
+      in
       match vl with
-        | [Vint lo; Vint hi] ->
-          let lo = BigInt.to_int lo in
-          let hi = BigInt.to_int hi in
-          if lo > hi then raise Invalid_range
-          else
-            let v = Vector.make (hi - lo) (Vint BigInt.zero) in
-            for i = lo to hi - 1 do
-              Vector.set v (i - lo) (Vint (BigInt.of_int i));
-            done;
-            Vlist v
+        | [Vint hi] -> aux BigInt.zero hi 
+        | [Vint lo; Vint hi] -> aux lo hi
         | [Vint le; Vint ri; Vint step] -> 
           let le = BigInt.to_int le in
           let ri = BigInt.to_int ri in
@@ -77,6 +95,13 @@ module Primitives =
               Vector.set v i (Vint (BigInt.of_int (le + i * step)));
             done;
             Vlist v
+        | _ -> assert false
+
+    let pop vl =
+      match vl with
+        | [Vlist v] ->
+            begin try Vector.pop v
+            with Vector.Empty -> assert false end
         | _ -> assert false
 
     let append = function
@@ -119,13 +144,17 @@ module Primitives =
       | _ -> assert false
     
     let () = 
-      Hashtbl.add func_table "pop" pop;
-      Hashtbl.add func_table "range" range; 
-      Hashtbl.add func_table "append" append; 
-      Hashtbl.add func_table "copy" copy; 
-      Hashtbl.add func_table "clear" clear; 
-      Hashtbl.add func_table "reverse" reverse; 
-      Hashtbl.add func_table "sort" sort;
+      Hashtbl.add list_func_table "pop" pop;
+      Hashtbl.add list_func_table "append" append;
+      Hashtbl.add list_func_table "copy" copy;
+      Hashtbl.add list_func_table "clear" clear;
+      Hashtbl.add list_func_table "reverse" reverse;
+      Hashtbl.add list_func_table "sort" sort;
+
+      Hashtbl.add std_func_table "int" int;
+      Hashtbl.add std_func_table "print" print;
+      Hashtbl.add std_func_table "range" range;
+      Hashtbl.add std_func_table "input" input;
 
   end
 
@@ -203,17 +232,22 @@ let rec expr (env: env) (e: expr): value =
       | _ -> assert false end
   | Ecall (id, params) ->
       begin try
-        let id_params, b = Hashtbl.find env.funcs id.id_str in
-        let envf = {vars = Hashtbl.create 10; funcs = env.funcs} in
+        let f = Hashtbl.find Primitives.std_func_table id.id_str in
+        f (List.map (fun e -> expr env e) params)
+      with Not_found ->
         begin try
-          List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
-          begin try block envf b; Vnone
-          with Return v -> v end
-        with Invalid_argument _s -> assert false end
-      with Not_found -> assert false end
+          let id_params, b = Hashtbl.find env.funcs id.id_str in
+          let envf = {vars = Hashtbl.create 10; funcs = env.funcs} in
+          begin try
+            List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
+            begin try block envf b; Vnone
+            with Return v -> v end
+          with Invalid_argument _s -> assert false end
+        with Not_found -> assert false end
+      end
   | Edot (e, id, params) ->
       begin try
-        let f = Hashtbl.find Primitives.func_table id.id_str in
+        let f = Hashtbl.find Primitives.list_func_table id.id_str in
         f (List.map (fun e -> expr env e) (e::params))
       with Not_found -> assert false end
   | Elist l ->
@@ -272,7 +306,7 @@ and stmt (env: env) (s: stmt): unit =
           with Break -> () end
       | _ -> assert false
       end;
-  | Seval e -> Printf.printf "%s\n" (value_to_string (expr env e)); Format.printf "\n"
+  | Seval e -> let _ = expr env e in ()
   | Sset (e1, e2, e3) ->
     let e1 = expr env e1 in
     let e2 = expr env e2 in
@@ -308,8 +342,8 @@ and bool (env: env) (e: expr): bool =
 
 let interp file =
   let env = mk_new_env () in
-  block env file;
-  print_env env
+  block env file
+  (* print_env env *)
 
 let () =
   let file = Sys.argv.(1) in

@@ -179,12 +179,12 @@ let py_div_mod n1 n2 =
   let q, r = BigInt.euclidean_div_mod n1 n2 in
   if BigInt.sign n2 >= 0 then (q, r)
   else
-    let q = if BigInt.sign r >= 0 then BigInt.sub q BigInt.one else q in
+    let q = if BigInt.sign r > 0 then BigInt.sub q BigInt.one else q in
     let r = if BigInt.sign r > 0 then BigInt.add r n2 else r in
     (q, r)
 
-let py_div n1 n2 = fst (py_div_mod n1 n1)
-let py_mod n1 n2 = snd (py_div_mod n1 n1)
+let py_div n1 n2 = fst (py_div_mod n1 n2)
+let py_mod n1 n2 = snd (py_div_mod n1 n2)
 
 let binop_op = function
   | Badd -> BigInt.add

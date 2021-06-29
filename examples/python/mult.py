@@ -1,8 +1,8 @@
 
-print("la multiplication dite russe")
+print('la multiplication dite russe')
 
-a = int(input("entrez a : "))
-b = int(input("entrez b : "))
+a = int(input('entrez a : '))
+b = int(input('entrez b : '))
 
 p = a
 q = b
@@ -24,5 +24,5 @@ while q > 0:
     p += p
     q //= 2
 print(p, q, r)
-print("a * b =", r)
+print('a * b =', r)
 #@ assert r == a * b

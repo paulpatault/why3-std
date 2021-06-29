@@ -116,6 +116,7 @@ rule next_tokens = parse
   | integer as s
             { [INTEGER s] }
   | '"'     { [STRING (string lexbuf)] }
+  | "'"     { [STRING (string_quote lexbuf)] }
   | eof     { NEWLINE :: unindent 0 @ [EOF] }
   | _ as c  { raise (Lexing_error ("illegal character: " ^ String.make 1 c)) }
 
@@ -130,17 +131,34 @@ and indentation = parse
 and string = parse
   | '"'
       { let s = Buffer.contents string_buffer in
-	Buffer.reset string_buffer;
-	s }
+        Buffer.reset string_buffer;
+        s }
   | "\\n"
       { Buffer.add_char string_buffer '\n';
-	string lexbuf }
+        string lexbuf }
   | "\\\""
       { Buffer.add_char string_buffer '"';
-	string lexbuf }
+        string lexbuf }
   | _ as c
       { Buffer.add_char string_buffer c;
-	string lexbuf }
+        string lexbuf }
+  | eof
+      { raise (Lexing_error "unterminated string") }
+
+and string_quote = parse
+  | "'"
+      { let s = Buffer.contents string_buffer in
+        Buffer.reset string_buffer;
+        s }
+  | "\\n"
+      { Buffer.add_char string_buffer '\n';
+        string_quote lexbuf }
+  | "\\\""
+      { Buffer.add_char string_buffer '"';
+        string_quote lexbuf }
+  | _ as c
+      { Buffer.add_char string_buffer c;
+        string_quote lexbuf }
   | eof
       { raise (Lexing_error "unterminated string") }
 
@@ -150,8 +168,8 @@ and string = parse
     let tokens = Queue.create () in
     fun lb ->
       if Queue.is_empty tokens then begin
-	let l = next_tokens lb in
-	List.iter (fun t -> Queue.add t tokens) l
+        let l = next_tokens lb in
+        List.iter (fun t -> Queue.add t tokens) l
       end;
       Queue.pop tokens
 

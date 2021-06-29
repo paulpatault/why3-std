@@ -42,6 +42,47 @@ exception Return of value
 module Primitives =
   struct
 
+  type primitive = (string, value list -> value) Hashtbl.t
+  let func_table:primitive = Hashtbl.create 10
+
+    let pop vl =
+      match vl with
+        | [Vlist v] ->
+          begin try Vector.pop v
+          with Vector.Empty -> assert false end
+        | _ -> assert false
+
+    exception Invalid_range
+    let range vl =
+      match vl with
+        | [Vint lo, Vint hi] ->
+          let lo = BigInt.to_int lo in
+          let hi = BigInt.to_int hi in
+          if lo > hi then raise Invalid_range
+          else
+            let v = Vector.make (hi - lo) (Vint BigInt.zero) in
+            for i = lo to hi - 1 do
+              Vector.set v (i - lo) (Vint (BigInt.of_int i));
+            done;
+            Vlist v
+        | _ -> assert false
+
+    let range3 vl =
+      match vl with
+        | [Vint le, Vint ri, Vint step] ->
+          let le = BigInt.to_int le in
+          let ri = BigInt.to_int ri in
+          let step = BigInt.to_int step in
+          if (le > ri || step <= 0) && (ri > le || step >= 0) then raise Invalid_range
+          else
+            let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
+            let v = Vector.make len (Vint BigInt.zero) in
+            for i = 0 to len-1 do
+              Vector.set v i (Vint (BigInt.of_int (le + i * step)));
+            done;
+            Vlist v
+        | _ -> assert false
+
     let append = function
       | [Vlist v, x] -> Vector.push v x; Vnone
       | _ -> assert false

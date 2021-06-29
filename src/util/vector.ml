@@ -181,4 +181,7 @@ let iteri f a = for i = 0 to length a - 1 do f i (get a i) done
 let iter f a =
   for i = 0 to length a - 1 do f (get a i) done
 
-let sort (f: 'a -> 'a -> int) (a: 'a t): unit = Array.sort f a.data
+let sort (f: 'a -> 'a -> int) (a: 'a t): unit =
+  let sorted = Array.sub a.data 0 (length a) in
+  Array.sort f sorted;
+  Array.iteri (fun i e -> set a i e) sorted

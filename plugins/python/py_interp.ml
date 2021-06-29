@@ -65,7 +65,7 @@ module Primitives =
               Vector.set v (i - lo) (Vint (BigInt.of_int i));
             done;
             Vlist v
-        | [Vint le; Vint ri; Vint step] -> 
+        | [Vint le; Vint ri; Vint step] ->
           let le = BigInt.to_int le in
           let ri = BigInt.to_int ri in
           let step = BigInt.to_int step in
@@ -94,9 +94,11 @@ module Primitives =
     let reverse = function
       | [Vlist l] ->
           let len = Vector.length l in
-          let res = Vector.create ~dummy:Vnone ~capacity:len in
-          for i=0 to len do
-            Vector.push res (Vector.get l i)
+          let n = (len / 2) + if len mod 2 = 0 then -1 else 0 in
+          for i=0 to n do
+            let temp = Vector.get l i in
+            Vector.set l i (Vector.get l (len - i - 1));
+            Vector.set l (len - i - 1) temp
           done;
           Vnone
       | _ -> assert false
@@ -117,14 +119,14 @@ module Primitives =
           Vector.sort comp l;
           Vnone
       | _ -> assert false
-    
-    let () = 
+
+    let () =
       Hashtbl.add func_table "pop" pop;
-      Hashtbl.add func_table "range" range; 
-      Hashtbl.add func_table "append" append; 
-      Hashtbl.add func_table "copy" copy; 
-      Hashtbl.add func_table "clear" clear; 
-      Hashtbl.add func_table "reverse" reverse; 
+      Hashtbl.add func_table "range" range;
+      Hashtbl.add func_table "append" append;
+      Hashtbl.add func_table "copy" copy;
+      Hashtbl.add func_table "clear" clear;
+      Hashtbl.add func_table "reverse" reverse;
       Hashtbl.add func_table "sort" sort;
 
   end

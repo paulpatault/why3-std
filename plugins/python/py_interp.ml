@@ -66,7 +66,7 @@ module Primitives =
       let rec aux vl =
         match vl with
           | v::[] -> Format.sprintf "%s" (value_to_string v)
-          | v::lv -> let s = Format.sprintf "%s" (aux lv) in Printf.sprintf "%s %s" (value_to_string v) s
+          | v::lv -> let s = Format.sprintf "%s" (aux lv) in Format.sprintf "%s %s" (value_to_string v) s
           | _ -> ""
       in
       Format.printf "%s\n" (aux vl);

@@ -348,3 +348,9 @@ val unsafe_resize: 'a t -> int -> unit
 val unsafe_get : 'a t -> int -> 'a
 val unsafe_set : 'a t -> int -> 'a -> unit
 *)
+
+val sort : ('a -> 'a -> int) -> 'a t -> unit
+(*
+  Uses the Array.sort method, the first parameter is the comparison function.
+  This method modifies the vector passed in.
+*)

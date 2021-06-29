@@ -176,8 +176,9 @@ let mapi ~dummy:(dummy: 'b) (a: 'a t) (f: (int) -> ('a -> 'b)) : 'b t =
     a_new
   end
 
-
 let iteri f a = for i = 0 to length a - 1 do f i (get a i) done
 
 let iter f a =
   for i = 0 to length a - 1 do f (get a i) done
+
+let sort (f: 'a -> 'a -> int) (a: 'a t): unit = Array.sort f a.data

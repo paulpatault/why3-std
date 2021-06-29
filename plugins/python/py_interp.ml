@@ -42,17 +42,18 @@ exception Return of value
 module Primitives =
   struct
 
-  type primitive = (string, value list -> value) Hashtbl.t
-  let func_table:primitive = Hashtbl.create 10
+    type t = (string, value list -> value) Hashtbl.t
+    let func_table:t = Hashtbl.create 10
 
     let pop vl =
       match vl with
         | [Vlist v] ->
-          begin try Vector.pop v
-          with Vector.Empty -> assert false end
+            begin try Vector.pop v
+            with Vector.Empty -> assert false end
         | _ -> assert false
 
     exception Invalid_range
+
     let range vl =
       match vl with
         | [Vint lo, Vint hi] ->
@@ -98,7 +99,7 @@ module Primitives =
     let reverse = function
       | [Vlist l] ->
           let len = Vector.length l in
-          let res = Vector.create ~dummy:Vnone ~capacity:0 in
+          let res = Vector.create ~dummy:Vnone ~capacity:len in
           for i=0 to len do
             Vector.push res (Vector.get l i)
           done;

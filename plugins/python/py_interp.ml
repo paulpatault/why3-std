@@ -39,6 +39,15 @@ exception Break
 exception Continue
 exception Return of value
 
+module Primitives =
+  struct
+
+    let append = function
+      | Vlist v, x -> Vector.push v x
+      | _ -> assert false
+
+  end
+
 let print_env e =
   Printf.printf "ENV VARS: [\n";
   Hashtbl.iter (fun s v -> Printf.printf "  %s := %s\n" s (value_to_string v)) e.vars;

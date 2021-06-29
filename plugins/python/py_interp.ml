@@ -91,6 +91,15 @@ module Primitives =
       in
       Format.printf "%s\n" (aux vl);
       Vnone
+    
+    let randint vl =
+      match vl with
+        | [Vint lo; Vint hi] ->
+          let lo = BigInt.to_int lo in
+          let hi = BigInt.to_int hi in
+          Random.self_init ();
+          Vint (BigInt.of_int (Random.int (hi + 1) + lo))
+        | _ -> assert false
 
     exception Invalid_range
 
@@ -172,6 +181,7 @@ module Primitives =
       Hashtbl.add std_func_table "print" print;
       Hashtbl.add std_func_table "range" range;
       Hashtbl.add std_func_table "input" input;
+      Hashtbl.add std_func_table "randint" randint;
 
   end
 

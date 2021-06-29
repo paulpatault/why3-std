@@ -43,7 +43,42 @@ module Primitives =
   struct
 
     let append = function
-      | Vlist v, x -> Vector.push v x
+      | [Vlist v, x] -> Vector.push v x; Vnone
+      | _ -> assert false
+
+    let copy = function
+      | [Vlist l] -> Vector.copy l
+      | _ -> assert false
+
+    let clear = function
+      | [Vlist l] -> Vector.clear l; Vnone
+      | _ -> assert false
+
+    let reverse = function
+      | [Vlist l] ->
+          let len = Vector.length l in
+          let res = Vector.create ~dummy:Vnone ~capacity:0 in
+          for i=0 to len do
+            Vector.push res (Vector.get l i)
+          done;
+          Vnone
+      | _ -> assert false
+
+    let sort = function
+      | [Vlist l] ->
+          let rec comp a b =
+            match a, b with
+            | Vbool a, Vbool b -> Bool.compare a b
+            | Vint a, Vint b -> BigInt.compare a b
+            | Vstring a, Vstring b -> String.compare a b
+            | Vlist a, Vlist b ->
+                if Vector.length a = 0 then -1
+                else if Vector.length b = 0 then 1
+                else comp (Vector.get a 0) (Vector.get b 0)
+            | _ -> assert false
+          in
+          Vector.sort comp l;
+          Vnone
       | _ -> assert false
 
   end

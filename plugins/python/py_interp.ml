@@ -22,10 +22,10 @@ let rec value_to_string = function
     let len = Vector.length v in
     let res = ref "[" in
     for i = 0 to len-1 do
-      res := !res ^ value_to_string (Vector.get v i);
-      if i < len-1 then res := !res ^ ", "
+      res := Format.sprintf "%s%s" !res (value_to_string (Vector.get v i));
+      if i < len-1 then res := Format.sprintf "%s%s" !res ", "
     done;
-    res := !res ^ "]"; !res
+    res := Format.sprintf "%s%s" !res "]"; !res
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
@@ -63,9 +63,15 @@ module Primitives =
         | _ -> assert false
 
     let print vl =
-      match vl with
-        | [v] -> Printf.printf "%s\n" (value_to_string v); Vnone
-        | _ -> assert false
+      let rec aux vl =
+        match vl with
+          | v::[] -> Format.sprintf "%s" (value_to_string v)
+          | v::lv -> let s = Format.sprintf "%s" (aux lv) in Printf.sprintf "%s %s" (value_to_string v) s
+          | _ -> ""
+      in
+      Format.printf "%s\n" (aux vl);
+      Vnone
+
 
     exception Invalid_range
     let range vl =
@@ -119,7 +125,7 @@ module Primitives =
     let reverse = function
       | [Vlist l] ->
           let len = Vector.length l in
-          let n = (len / 2) + if len mod 2 = 0 then -1 else 0 in
+          let n = (len / 2) - 1 in
           for i=0 to n do
             let temp = Vector.get l i in
             Vector.set l i (Vector.get l (len - i - 1));

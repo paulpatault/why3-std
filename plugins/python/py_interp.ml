@@ -12,6 +12,28 @@ type value =
   | Vlist   of value Vector.t
   | Vstring of string
 
+let rec type_to_string = function
+  | Vnone     -> "NoneType"
+  | Vbool _   -> "bool"
+  | Vint _    -> "int"
+  | Vstring _ -> "str"
+  | Vlist _   -> "list"
+
+let binop_to_string = function
+  | Badd -> "+"
+  | Bsub -> "-"
+  | Bmul -> "*"
+  | Bdiv -> "//"
+  | Bmod -> "%"
+  | Beq  -> "=="
+  | Bneq -> "!="
+  | Blt  -> "<"
+  | Ble  -> "<="
+  | Bgt  -> ">"
+  | Bge  -> ">="
+  | Band -> "and"
+  | Bor ->  "or"
+
 let rec value_to_string ftm = function
   | Vnone       -> "None"
   | Vbool true  -> "True"
@@ -37,35 +59,31 @@ exception Break
 exception Continue
 exception Return of value
 
-let rec py_compare a' b' =
-  match a', b' with
-  | Vbool a, Vbool b -> Bool.compare a b
-  | Vint a, Vint b -> BigInt.compare a b
-  | Vstring a, Vstring b -> String.compare a b
-  | Vlist a, Vlist b ->
-      begin try
+let rec py_compare v1 v2 ~loc =
+  match v1, v2 with
+  | Vbool b1,   Vbool b2   -> Bool.compare b1 b2
+  | Vint n1,    Vint n2    -> BigInt.compare n1 n2
+  | Vstring s1, Vstring s2 -> String.compare s1 s2
+  | Vlist l1, Vlist l2 ->
         let vtol v =
           let rec aux acc = function
             | -1 -> acc
             | i -> aux (Vector.get v i :: acc) (i-1)
           in aux [] (Vector.length v - 1) in
-        List.compare py_compare (vtol a) (vtol b)
-      with
-        Invalid_argument _ ->
-          print_endline (Format.sprintf "a=%a@." value_to_string a');
-          print_endline (Format.sprintf "b=%a@." value_to_string b');
-          assert false
-      end
-  | _ -> assert false
+        List.compare (py_compare ~loc) (vtol l1) (vtol l2)
+  | _ ->
+      Loc.errorm ~loc
+        "TypeError: comparison not supported between instances of '%s' and '%s'"
+        (type_to_string v1) (type_to_string v2)
 
 module Primitives =
   struct
 
-    type t = (string, value list -> value) Hashtbl.t
+    type t = (string, loc:Loc.position -> value list -> value) Hashtbl.t
     let list_func_table:t = Hashtbl.create 6
     let std_func_table:t = Hashtbl.create 6
 
-    let input vl =
+    let input ~loc vl =
       let aux s =
         Printf.printf "%s" s;
         read_line ()
@@ -75,14 +93,14 @@ module Primitives =
         | [] -> Vstring (aux "")
         | _ -> assert false
 
-    let int vl =
+    let int ~loc vl =
       match vl with
         | [Vint i] -> Vint i
         | [Vbool b] -> if b then Vint (BigInt.one) else Vint (BigInt.zero)
         | [Vstring s] -> begin try Vint (BigInt.of_string s) with Failure s -> assert false end
         | _ -> assert false
 
-    let print vl =
+    let print ~loc vl =
       let rec aux vl =
         match vl with
           | [v] -> Format.sprintf "%a" value_to_string v
@@ -92,7 +110,7 @@ module Primitives =
       Format.printf "%s\n" (aux vl);
       Vnone
 
-    let randint vl =
+    let randint ~loc vl =
       match vl with
         | [Vint lo; Vint hi] ->
           let lo = BigInt.to_int lo in
@@ -103,7 +121,7 @@ module Primitives =
 
     exception Invalid_range
 
-    let range vl =
+    let range ~loc vl =
       let aux lo hi =
         let lo = BigInt.to_int lo in
         let hi = BigInt.to_int hi in
@@ -132,26 +150,26 @@ module Primitives =
             Vlist v
         | _ -> assert false
 
-    let pop vl =
+    let pop ~loc vl =
       match vl with
         | [Vlist v] ->
             begin try Vector.pop v
             with Vector.Empty -> assert false end
         | _ -> assert false
 
-    let append = function
+    let append ~loc = function
       | [Vlist v; x] -> Vector.push v x; Vnone
       | _ -> assert false
 
-    let copy = function
+    let copy ~loc = function
       | [Vlist l] -> Vlist (Vector.copy l)
       | _ -> assert false
 
-    let clear = function
+    let clear ~loc = function
       | [Vlist l] -> Vector.clear l; Vnone
       | _ -> assert false
 
-    let reverse = function
+    let reverse ~loc = function
       | [Vlist l] ->
           let len = Vector.length l in
           let n = (len / 2) - 1 in
@@ -163,9 +181,9 @@ module Primitives =
           Vnone
       | _ -> assert false
 
-    let sort = function
+    let sort ~loc = function
       | [Vlist l] ->
-          Vector.sort py_compare l;
+          Vector.sort (py_compare ~loc) l;
           Vnone
       | _ -> assert false
 
@@ -215,13 +233,13 @@ let binop_op = function
   | Bmod -> py_mod
   | _    -> assert false
 
-let binop_comp = function
-  | Beq  -> BigInt.eq
-  | Bneq -> fun e1 e2 -> not (BigInt.eq e1 e2)
-  | Blt  -> BigInt.lt
-  | Ble  -> BigInt.le
-  | Bgt  -> BigInt.gt
-  | Bge  -> BigInt.ge
+let binop_comp ~loc = function
+  | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
+  | Bneq -> fun e1 e2 -> py_compare ~loc e1 e2 <> 0
+  | Blt  -> fun e1 e2 -> py_compare ~loc e1 e2 <  0
+  | Ble  -> fun e1 e2 -> py_compare ~loc e1 e2 <= 0
+  | Bgt  -> fun e1 e2 -> py_compare ~loc e1 e2 >  0
+  | Bge  -> fun e1 e2 -> py_compare ~loc e1 e2 >= 0
   | _    -> assert false
 
 let binop_logic = function
@@ -241,12 +259,19 @@ let rec expr (env: env) (e: expr): value =
   | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vint n1, Vint n2 -> let b = binop_op b in Vint (b n1 n2)
-      | _ -> assert false end
+      | v1, v2 ->
+          let t1 = type_to_string v1 in
+          let t2 = type_to_string v2 in
+          let b = binop_to_string b in
+          Loc.errorm ~loc:e.expr_loc
+            "TypeError: unsupported operand type(s) for %s: '%s' and '%s'"
+            b t1 t2
+      end
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
-      begin match expr env e1, expr env e2 with
-      | Vint n1, Vint n2 ->
-          let b = binop_comp b in Vbool (b n1 n2)
-      | _ -> assert false end
+      let e1 = expr env e1 in
+      let e2 = expr env e2 in
+      let b = binop_comp b in
+      Vbool (b ~loc:e.expr_loc e1 e2)
   | Ebinop (Band | Bor as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vbool v1, Vbool v2 -> let b = binop_logic b in Vbool (b v1 v2)
@@ -260,7 +285,7 @@ let rec expr (env: env) (e: expr): value =
   | Ecall (id, params) ->
       begin try
         let f = Hashtbl.find Primitives.std_func_table id.id_str in
-        f (List.map (fun e -> expr env e) params)
+        f (List.map (fun e -> expr env e) params) ~loc:e.expr_loc
       with Not_found ->
         begin try
           let id_params, b = Hashtbl.find env.funcs id.id_str in
@@ -275,7 +300,7 @@ let rec expr (env: env) (e: expr): value =
   | Edot (e, id, params) ->
       begin try
         let f = Hashtbl.find Primitives.list_func_table id.id_str in
-        f (List.map (fun e -> expr env e) (e::params))
+        f (List.map (fun e -> expr env e) (e::params)) ~loc:e.expr_loc
       with Not_found -> assert false end
   | Elist l ->
       let v = Vector.create ~dummy:Vnone ~capacity:0 in

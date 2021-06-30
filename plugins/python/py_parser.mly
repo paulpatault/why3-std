@@ -203,13 +203,7 @@ expr_desc:
       | Elist [e1] -> Emake (e1, e2)
       | _ -> Ebinop (Bmul, e1, e2) }
 | e=expr_dot DOT f=ident LEFTPAR el=separated_list(COMMA, expr) RIGHTPAR
-    {
-      match f.id_str with
-      | "pop" | "append" | "reverse" | "clear" | "copy" | "sort" ->
-        Edot (e, f, el)
-      | m -> let loc = floc $startpos $endpos in
-             Loc.errorm ~loc "The method '%s' is not implemented" m
-    }
+    { Edot (e, f, el) }
 | f = ident LEFTPAR e = separated_list(COMMA, expr) RIGHTPAR
     { Ecall (f, e) }
 | LEFTSQ l = separated_list(COMMA, expr) RIGHTSQ

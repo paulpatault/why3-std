@@ -169,9 +169,14 @@ let rec expr env {Py_ast.expr_loc = loc; Py_ast.expr_desc = d } = match d with
     mk_expr ~loc (Enot (expr env e))
 
   | Py_ast.Edot (e, f, el) ->
-    let el = List.map (expr env) (e::el) in
-    let id = Qdot (Qident (mk_id ~loc "Python"), f) in
-    mk_expr ~loc (Eidapp (id, el))
+    begin match f.id_str with
+      | "pop" | "append" | "reverse" | "clear" | "copy" | "sort" ->
+          let el = List.map (expr env) (e::el) in
+          let id = Qdot (Qident (mk_id ~loc "Python"), f) in
+          mk_expr ~loc (Eidapp (id, el))
+      | m ->
+          Loc.errorm ~loc "The method '%s' is not implemented" m
+    end
 
   | Py_ast.Ecall ({id_str="slice"} as id, [e1;e2;e3]) ->
 

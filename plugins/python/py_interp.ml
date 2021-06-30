@@ -163,7 +163,7 @@ module Primitives =
 
     let print ~loc vl =
       let rec aux = function
-        | [v] -> printf "%a" print_value v
+        | [v] -> printf "%a@." print_value v
         | v::lv -> printf "%a " print_value v; aux lv
         | [] -> ()
       in

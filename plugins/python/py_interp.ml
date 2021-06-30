@@ -7,6 +7,14 @@ let () = Random.self_init ()
 (* let input = ref (fun _ -> failwith "todo")
 let print = ref (fun _ -> failwith "todo") *)
 
+let get_vec v i =
+  if i < Vector.length v && i >= 0 then Vector.get v i
+  else raise (Invalid_argument "Vector.get")
+
+let set_vec v i x =
+  if i < Vector.length v && i >= 0 then Vector.set v i x
+  else raise (Invalid_argument "Vector.set")
+
 type value =
   | Vnone
   | Vbool   of bool
@@ -51,8 +59,8 @@ let rec print_value fmt = function
 and print_list fmt (vec, i) =
   if i = Vector.length vec then ()
   else if i + 1 = Vector.length vec
-  then fprintf fmt "%a" print_value (Vector.get vec i)
-  else fprintf fmt "%a, %a" print_value (Vector.get vec i) print_list (vec, (i+1))
+  then fprintf fmt "%a" print_value (get_vec vec i)
+  else fprintf fmt "%a, %a" print_value (get_vec vec i) print_list (vec, (i+1))
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
@@ -68,7 +76,6 @@ exception Return of value
 let transform_idx v idx =
   if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
-(* let get_vet v i = *)
 
 let py_div_mod n1 n2 =
   let q, r = BigInt.euclidean_div_mod n1 n2 in
@@ -90,7 +97,7 @@ let rec py_compare v1 v2 ~loc =
         let vtol v =
           let rec aux acc = function
             | -1 -> acc
-            | i -> aux (Vector.get v i :: acc) (i-1)
+            | i -> aux (get_vec v i :: acc) (i-1)
           in aux [] (Vector.length v - 1) in
         List.compare (py_compare ~loc) (vtol l1) (vtol l2)
   | _ ->
@@ -182,7 +189,7 @@ module Primitives =
         else
           let v = Vector.make (hi - lo) (Vint BigInt.zero) in
           for i=lo to hi-1 do
-            Vector.set v (i - lo) (Vint (BigInt.of_int i));
+            set_vec v (i - lo) (Vint (BigInt.of_int i));
           done;
           Vlist v
       in
@@ -207,7 +214,7 @@ module Primitives =
               let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
               let v = Vector.make len (Vint BigInt.zero) in
               for i=0 to len-1 do
-                Vector.set v i (Vint (BigInt.of_int (le + i * step)));
+                set_vec v i (Vint (BigInt.of_int (le + i * step)));
               done;
               Vlist v
         | [v1; v2; v3] ->
@@ -262,9 +269,9 @@ module Primitives =
           let len = Vector.length l in
           let n = (len / 2) - 1 in
           for i=0 to n do
-            let temp = Vector.get l i in
-            Vector.set l i (Vector.get l (len - i - 1));
-            Vector.set l (len - i - 1) temp
+            let temp = get_vec l i in
+            set_vec l i (get_vec l (len - i - 1));
+            set_vec l (len - i - 1) temp
           done;
           Vnone
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
@@ -417,7 +424,7 @@ let rec expr (env: env) (e: expr): value =
         | Vlist v, Vint i ->
           begin try
             let idx = transform_idx v i |> BigInt.to_int in
-            let res = Vector.get v idx in
+            let res = get_vec v idx in
             res
           with Invalid_argument _ ->
             Loc.errorm ~loc:e.expr_loc "IndexError: list index out of range"
@@ -474,7 +481,7 @@ and stmt (env: env) (s: stmt): unit =
     begin match e1, e2, e3 with
       | Vlist v, Vint i, e ->
           begin try
-            Vector.set v (transform_idx v i |> BigInt.to_int) e
+            set_vec v (transform_idx v i |> BigInt.to_int) e
           with Invalid_argument _ ->
             Loc.errorm ~loc:s.stmt_loc "IndexError: list index out of range"
           end
@@ -514,6 +521,11 @@ and bool (env: env) (e: expr): bool =
 let interp file =
   let env = mk_new_env () in
   block env file
+
+(* let interpreter (file: string) (input: string -> string) (print: string -> unit): unit =
+  let c = open_in file in
+  let file = Py_lexer.parse file c in
+  interp file *)
 
 let () =
   let file = Sys.argv.(1) in

@@ -1,6 +1,7 @@
 
 open Why3
 open Py_ast
+open Format
 
 let () = Random.self_init ()
 (* let input = ref (fun _ -> failwith "todo")
@@ -39,19 +40,19 @@ let unop_to_string = function
   | Uneg -> "-"
   | Unot -> "not"
 
-let rec value_to_string ftm = function
-  | Vnone       -> "None"
-  | Vbool true  -> "True"
-  | Vbool false -> "False"
-  | Vint n      -> BigInt.to_string n
-  | Vstring s   -> s
-  | Vlist v     -> Format.sprintf "[%a]" list_content_str (v, 0)
+let rec print_value fmt = function
+  | Vnone       -> fprintf fmt "None"
+  | Vbool true  -> fprintf fmt "True"
+  | Vbool false -> fprintf fmt "False"
+  | Vint n      -> fprintf fmt "%s" (BigInt.to_string n)
+  | Vstring s   -> fprintf fmt "%s" s
+  | Vlist v     -> fprintf fmt "[%a]" print_list (v, 0)
 
-and list_content_str ftm (vec, i) =
-  if i = Vector.length vec then ""
+and print_list fmt (vec, i) =
+  if i = Vector.length vec then ()
   else if i + 1 = Vector.length vec
-  then Format.sprintf "%a" value_to_string (Vector.get vec i)
-  else Format.sprintf "%a, %a" value_to_string (Vector.get vec i) list_content_str (vec, (i+1))
+  then fprintf fmt "%a" print_value (Vector.get vec i)
+  else fprintf fmt "%a, %a" print_value (Vector.get vec i) print_list (vec, (i+1))
 
 type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
@@ -67,13 +68,7 @@ exception Return of value
 let transform_idx v idx =
   if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
 
-let print_env e =
-  Printf.printf "ENV VARS: [\n";
-  (* Hashtbl.iter (fun s v -> Format.sprintf "  %s := %a@." s value_to_string v) e.vars;
-  Printf.printf "]\n";
-  Printf.printf "ENV FUNCS: [\n";
-  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs; *)
-  Printf.printf "]\n"
+(* let get_vet v i = *)
 
 let py_div_mod n1 n2 =
   let q, r = BigInt.euclidean_div_mod n1 n2 in
@@ -133,13 +128,13 @@ module Primitives =
     let std_func_table:t = Hashtbl.create 6
 
     let input ~loc vl =
-      let aux s =
-        Printf.printf "%s" s;
+      let aux v =
+        printf "%a" print_value v;
         read_line ()
       in
       match vl with
-        | [v] -> Vstring (aux (Format.sprintf "%a" value_to_string v))
-        | []  -> Vstring (aux "")
+        | [v] -> Vstring (aux v)
+        | []  -> Vstring (aux (Vstring ""))
         | l   -> Loc.errorm ~loc
             "TypeError: input expected at most 1 argument, got %d" (List.length l)
 
@@ -160,13 +155,12 @@ module Primitives =
       | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
     let print ~loc vl =
-      let rec aux vl =
-        match vl with
-          | [v] -> Format.sprintf "%a" value_to_string v
-          | v::lv -> Format.sprintf "%a %s" value_to_string v (aux lv)
-          | _ -> ""
+      let rec aux = function
+        | [v] -> printf "%a" print_value v
+        | v::lv -> printf "%a " print_value v; aux lv
+        | [] -> ()
       in
-      Format.printf "%s\n" (aux vl);
+      aux vl;
       Vnone
 
     let randint ~loc = function
@@ -228,10 +222,10 @@ module Primitives =
               (List.length l)
 
     let type_error m args i =
-      Format.sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
+      sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
 
     let attribute_error t m =
-      Format.sprintf "AttributeError: '%s' object has no attribute '%s'" (type_to_string t) m
+      sprintf "AttributeError: '%s' object has no attribute '%s'" (type_to_string t) m
 
     let pop ~loc = function
       | [Vlist v] ->
@@ -326,7 +320,6 @@ module Primitives =
       Hashtbl.add std_func_table "int" int;
       Hashtbl.add std_func_table "print" print;
       Hashtbl.add std_func_table "range" range;
-      Hashtbl.add std_func_table "input" input;
       Hashtbl.add std_func_table "randint" randint;
       Hashtbl.add std_func_table "slice" slice;
 
@@ -361,16 +354,10 @@ let rec expr (env: env) (e: expr): value =
       let b = binop_comp b in
       Vbool (b ~loc:e.expr_loc e1 e2)
   | Ebinop (Band | Bor as b, e1, e2) ->
-      begin match expr env e1, expr env e2 with
-      | Vbool v1, Vbool v2 -> let b = binop_logic b in Vbool (b v1 v2)
-      | v1, v2 ->
-          let t1 = type_to_string v1 in
-          let t2 = type_to_string v2 in
-          let b = binop_to_string b in
-          Loc.errorm ~loc:e.expr_loc
-            "TypeError: unsupported operand type(s) for %s: '%s' and '%s'"
-            b t1 t2
-      end
+      let b  = binop_logic b in
+      let v1 = bool env e1 in
+      let v2 = bool env e2 in
+      Vbool (b v1 v2)
   | Eunop (u, e) ->
       let v = expr env e in
       begin match u, v with
@@ -431,9 +418,6 @@ let rec expr (env: env) (e: expr): value =
           begin try
             let idx = transform_idx v i |> BigInt.to_int in
             let res = Vector.get v idx in
-            Printf.printf "%s\n" (string_of_int idx);
-            Printf.printf "taille = %d\n" (Vector.length v);
-            print_endline (Format.sprintf "%a@." value_to_string res);
             res
           with Invalid_argument _ ->
             Loc.errorm ~loc:e.expr_loc "IndexError: list index out of range"
@@ -521,15 +505,15 @@ and block (env: env) (b: block): unit =
 
 and bool (env: env) (e: expr): bool =
   match expr env e with
-  | Vbool b  -> b
-  | non_bool -> Loc.errorm ~loc:e.expr_loc
-      "TypeError: conditions must be booleans, not %s"
-      (type_to_string non_bool)
+  | Vnone     -> false
+  | Vbool b   -> b
+  | Vint i    -> not (BigInt.eq i BigInt.zero)
+  | Vstring s -> s <> ""
+  | Vlist l   -> not (Vector.is_empty l)
 
 let interp file =
   let env = mk_new_env () in
   block env file
-  (* print_env env *)
 
 let () =
   let file = Sys.argv.(1) in

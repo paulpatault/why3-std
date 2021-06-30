@@ -42,9 +42,13 @@ let init ~dummy:(dummy: 'a) (n: int) (f: (int) -> 'a) : 'a t =
 
 let length (a: 'a t) : int = a.size
 
-let get (a: 'a t) (i2: int) : 'a = (a.data).(i2)
+let get (a: 'a t) (i2: int) : 'a =
+  if i2 < length a then (a.data).(i2)
+  else raise (Invalid_argument "Vector.get")
 
-let set (a: 'a t) (n: int) (x: 'a) : unit = (a.data).(n) <- x
+let set (a: 'a t) (n: int) (x: 'a) : unit =
+  if n < length a then (a.data).(n) <- x
+  else raise (Invalid_argument "Vector.set")
 
 let unsafe_resize (a: 'a t) (n: int) : unit =
   let n_old = Array.length (a.data) in

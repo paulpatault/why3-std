@@ -34,6 +34,10 @@ let binop_to_string = function
   | Band -> "and"
   | Bor ->  "or"
 
+let unop_to_string = function
+  | Uneg -> "-"
+  | Unot -> "not"
+
 let rec value_to_string ftm = function
   | Vnone       -> "None"
   | Vbool true  -> "True"
@@ -212,7 +216,9 @@ let print_env e =
   Printf.printf "]\n"
 
 let transform_idx v idx =
-  if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
+  if BigInt.sign idx < 0 then
+    BigInt.add (BigInt.of_int (Vector.length v)) idx
+  else idx
 
 let py_div_mod n1 n2 =
   let q, r = BigInt.euclidean_div_mod n1 n2 in
@@ -254,8 +260,11 @@ let rec expr (env: env) (e: expr): value =
   | Eint s    -> Vint (BigInt.of_string s)
   | Estring s -> Vstring s
   | Eident x  ->
-      begin try Hashtbl.find env.vars x.id_str
-      with Not_found -> assert false end
+      begin try
+        Hashtbl.find env.vars x.id_str
+      with Not_found ->
+        Loc.errorm ~loc:e.expr_loc "NameError: name '%s' is not defined" x.id_str
+      end
   | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vint n1, Vint n2 -> let b = binop_op b in Vint (b n1 n2)
@@ -275,13 +284,25 @@ let rec expr (env: env) (e: expr): value =
   | Ebinop (Band | Bor as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vbool v1, Vbool v2 -> let b = binop_logic b in Vbool (b v1 v2)
-      | _ -> assert false end
+      | v1, v2 ->
+          let t1 = type_to_string v1 in
+          let t2 = type_to_string v2 in
+          let b = binop_to_string b in
+          Loc.errorm ~loc:e.expr_loc
+            "TypeError: unsupported operand type(s) for %s: '%s' and '%s'"
+            b t1 t2
+      end
   | Eunop (u, e) ->
       let v = expr env e in
       begin match u, v with
       | Uneg, Vint n  -> Vint (BigInt.minus n)
       | Unot, Vbool b -> Vbool (not b)
-      | _ -> assert false end
+      | _ ->
+          let t = type_to_string v in
+          let u = unop_to_string u in
+          Loc.errorm ~loc:e.expr_loc
+            "TypeError: bad operand type for unary %s: '%s'" u t
+      end
   | Ecall (id, params) ->
       begin try
         let f = Hashtbl.find Primitives.std_func_table id.id_str in
@@ -294,14 +315,24 @@ let rec expr (env: env) (e: expr): value =
             List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
             begin try block envf b; Vnone
             with Return v -> v end
-          with Invalid_argument _s -> assert false end
-        with Not_found -> assert false end
+          with Invalid_argument _ ->
+            Loc.errorm ~loc:e.expr_loc
+              "TypeError: %s() takes %d positional argument but %d were given"
+              id.id_str (List.length id_params) (List.length params)
+          end
+        with Not_found ->
+          Loc.errorm ~loc:e.expr_loc "NameError: name '%s' is not defined" id.id_str
+        end
       end
   | Edot (e, id, params) ->
       begin try
         let f = Hashtbl.find Primitives.list_func_table id.id_str in
-        f (List.map (fun e -> expr env e) (e::params)) ~loc:e.expr_loc
-      with Not_found -> assert false end
+        let params = List.map (expr env) (e::params) in
+        f params ~loc:e.expr_loc
+      with Not_found ->
+          Loc.errorm ~loc:e.expr_loc
+            "AttributeError: 'list' object has no attribute '%s'" id.id_str
+      end
   | Elist l ->
       let v = Vector.create ~dummy:Vnone ~capacity:0 in
       List.iter (fun e -> Vector.push v (expr env e)) l;
@@ -309,17 +340,32 @@ let rec expr (env: env) (e: expr): value =
   | Emake (e1, e2) ->
       let e1 = expr env e1 in
       let e2 = expr env e2 in
-      let n =
-        match e2 with
+      let n = match e2 with
         | Vint n -> BigInt.to_int n
-        | _ -> assert false in
+        | _ -> Loc.errorm ~loc:e.expr_loc
+            "TypeError: can't multiply sequence by non-int of type '%s'" (type_to_string e2)
+      in
       Vlist (Vector.make ~dummy:Vnone n e1)
   | Eget (e1, e2) ->
       begin match expr env e1, expr env e2 with
         | Vlist v, Vint i ->
-          begin try Vector.get v (transform_idx v i |> BigInt.to_int)
-          with Invalid_argument _s -> assert false end
-        | _ -> assert false
+          begin try
+            let idx = transform_idx v i |> BigInt.to_int in
+            let res = Vector.get v idx in
+            Printf.printf "%s\n" (string_of_int idx);
+            Printf.printf "taille = %d\n" (Vector.length v);
+            print_endline (Format.sprintf "%a@." value_to_string res);
+            res
+          with Invalid_argument _ ->
+            Loc.errorm ~loc:e.expr_loc "IndexError: list index out of range"
+          end
+        | Vlist _, non_int ->
+            Loc.errorm ~loc:e.expr_loc
+              "TypeError: list indices must be integers or slices, not %s"
+              (type_to_string non_int)
+        | x, _ ->
+            Loc.errorm ~loc:e.expr_loc
+              "TypeError: '%s' object is not subscriptable" (type_to_string x)
       end
 
 and stmt (env: env) (s: stmt): unit =
@@ -327,11 +373,8 @@ and stmt (env: env) (s: stmt): unit =
   | Sblock b ->
       block env b
   | Sif (e, b1, b2) ->
-      begin match expr env e with
-      | Vbool true  -> block env b1
-      | Vbool false -> block env b2
-      | _ -> assert false
-      end
+      if bool env e then block env b1
+      else block env b2
   | Sreturn e ->
       let e = expr env e in
       raise (Return e)
@@ -356,7 +399,9 @@ and stmt (env: env) (s: stmt): unit =
               with Continue -> ()
             ) l
           with Break -> () end
-      | _ -> assert false
+      | non_list -> Loc.errorm ~loc:e.expr_loc
+          "TypeError: '%s' object is not iterable"
+          (type_to_string non_list)
       end;
   | Seval e -> let _ = expr env e in ()
   | Sset (e1, e2, e3) ->
@@ -367,8 +412,16 @@ and stmt (env: env) (s: stmt): unit =
       | Vlist v, Vint i, e ->
           begin try
             Vector.set v (transform_idx v i |> BigInt.to_int) e
-          with Invalid_argument s -> assert false end
-      | _ -> assert false
+          with Invalid_argument _ ->
+            Loc.errorm ~loc:s.stmt_loc "IndexError: list index out of range"
+          end
+        | Vlist _, non_int, _ ->
+            Loc.errorm ~loc:s.stmt_loc
+              "TypeError: list indices must be integers or slices, not %s"
+              (type_to_string non_int)
+        | x, _, _ ->
+            Loc.errorm ~loc:s.stmt_loc
+              "TypeError: '%s' object is not subscriptable" (type_to_string x)
     end
   | Sbreak -> raise Break
   | Scontinue -> raise Continue
@@ -389,8 +442,10 @@ and block (env: env) (b: block): unit =
 
 and bool (env: env) (e: expr): bool =
   match expr env e with
-  | Vbool b -> b
-  | _ -> assert false
+  | Vbool b  -> b
+  | non_bool -> Loc.errorm ~loc:e.expr_loc
+      "TypeError: conditions must be booleans, not %s"
+      (type_to_string non_bool)
 
 let interp file =
   let env = mk_new_env () in

@@ -242,25 +242,25 @@ module Primitives =
             Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
         | v::l ->
             Loc.errorm ~loc "%s" (attribute_error v "pop")
-        | _ -> assert false
+        | [] -> assert false
 
     let append ~loc = function
       | [Vlist v; x] -> Vector.push v x; Vnone
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "append" "one" (List.length l))
       | v::l -> Loc.errorm ~loc "%s" (attribute_error v "append")
-      | _ -> assert false
+      | [] -> assert false
 
     let copy ~loc = function
       | [Vlist l] -> Vlist (Vector.copy l)
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "copy" "zero" (List.length l))
       | v::l -> Loc.errorm ~loc "%s" (attribute_error v "copy")
-      | _ -> assert false
+      | [] -> assert false
 
     let clear ~loc = function
       | [Vlist l] -> Vector.clear l; Vnone
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "clear" "zero" (List.length l))
       | v::l -> Loc.errorm ~loc "%s" (attribute_error v "clear")
-      | _ -> assert false
+      | [] -> assert false
 
     let reverse ~loc = function
       | [Vlist l] ->
@@ -274,7 +274,7 @@ module Primitives =
           Vnone
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
       | v::l -> Loc.errorm ~loc "%s" (attribute_error v "reverse")
-      | _ -> assert false
+      | [] -> assert false
 
     let sort ~loc = function
       | [Vlist l] ->
@@ -282,13 +282,15 @@ module Primitives =
           Vnone
       | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
       | v::l -> Loc.errorm ~loc "%s" (attribute_error v "sort")
-      | _ -> assert false
+      | [] -> assert false
 
     let slice ~loc vl =
       let aux lo hi l =
         if lo < 0 then assert false
-        else if hi > Vector.length l then assert false
-        else if hi < lo then assert false
+        else if hi > Vector.length l then 
+          Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
+        else if hi < lo then
+          Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
         else
           let len = hi - lo in
           Vlist (Vector.sub l lo len)
@@ -308,7 +310,7 @@ module Primitives =
             Loc.errorm ~loc "%s" (type_error "slice" "two" (List.length l))
         | v::l ->
             Loc.errorm ~loc "%s" (attribute_error v "slice")
-        | _ -> assert false
+        | [] -> assert false
 
     let () =
       Hashtbl.add list_func_table "pop" pop;

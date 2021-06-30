@@ -59,6 +59,28 @@ exception Break
 exception Continue
 exception Return of value
 
+let transform_idx v idx =
+  if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
+
+let print_env e =
+  Printf.printf "ENV VARS: [\n";
+  (* Hashtbl.iter (fun s v -> Format.sprintf "  %s := %a@." s value_to_string v) e.vars;
+  Printf.printf "]\n";
+  Printf.printf "ENV FUNCS: [\n";
+  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs; *)
+  Printf.printf "]\n"
+
+let py_div_mod n1 n2 =
+  let q, r = BigInt.euclidean_div_mod n1 n2 in
+  if BigInt.sign n2 >= 0 then (q, r)
+  else
+    let q = if BigInt.sign r > 0 then BigInt.sub q BigInt.one else q in
+    let r = if BigInt.sign r > 0 then BigInt.add r n2 else r in
+    (q, r)
+
+let py_div n1 n2 = fst (py_div_mod n1 n2)
+let py_mod n1 n2 = snd (py_div_mod n1 n2)
+
 let rec py_compare v1 v2 ~loc =
   match v1, v2 with
   | Vbool b1,   Vbool b2   -> Bool.compare b1 b2
@@ -75,155 +97,6 @@ let rec py_compare v1 v2 ~loc =
       Loc.errorm ~loc
         "TypeError: comparison not supported between instances of '%s' and '%s'"
         (type_to_string v1) (type_to_string v2)
-
-module Primitives =
-  struct
-
-    type t = (string, loc:Loc.position -> value list -> value) Hashtbl.t
-    let list_func_table:t = Hashtbl.create 6
-    let std_func_table:t = Hashtbl.create 6
-
-    let input ~loc vl =
-      let aux s =
-        Printf.printf "%s" s;
-        read_line ()
-      in
-      match vl with
-        | [Vstring s] -> Vstring (aux s)
-        | [] -> Vstring (aux "")
-        | _ -> assert false
-
-    let int ~loc vl =
-      match vl with
-        | [Vint i] -> Vint i
-        | [Vbool b] -> if b then Vint (BigInt.one) else Vint (BigInt.zero)
-        | [Vstring s] -> begin try Vint (BigInt.of_string s) with Failure s -> assert false end
-        | _ -> assert false
-
-    let print ~loc vl =
-      let rec aux vl =
-        match vl with
-          | [v] -> Format.sprintf "%a" value_to_string v
-          | v::lv -> Format.sprintf "%a %s" value_to_string v (aux lv)
-          | _ -> ""
-      in
-      Format.printf "%s\n" (aux vl);
-      Vnone
-
-    let randint ~loc vl =
-      match vl with
-        | [Vint lo; Vint hi] ->
-          let lo = BigInt.to_int lo in
-          let hi = BigInt.to_int hi in
-          Random.self_init ();
-          Vint (BigInt.of_int (Random.int (hi + 1) + lo))
-        | _ -> assert false
-
-    exception Invalid_range
-
-    let range ~loc vl =
-      let aux lo hi =
-        let lo = BigInt.to_int lo in
-        let hi = BigInt.to_int hi in
-        if lo > hi then raise Invalid_range
-        else
-          let v = Vector.make (hi - lo) (Vint BigInt.zero) in
-          for i=lo to hi-1 do
-            Vector.set v (i - lo) (Vint (BigInt.of_int i));
-          done;
-          Vlist v
-      in
-      match vl with
-        | [Vint hi] -> aux BigInt.zero hi
-        | [Vint lo; Vint hi] -> aux lo hi
-        | [Vint le; Vint ri; Vint step] ->
-          let le = BigInt.to_int le in
-          let ri = BigInt.to_int ri in
-          let step = BigInt.to_int step in
-          if (le > ri || step <= 0) && (ri > le || step >= 0) then raise Invalid_range
-          else
-            let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
-            let v = Vector.make len (Vint BigInt.zero) in
-            for i=0 to len-1 do
-              Vector.set v i (Vint (BigInt.of_int (le + i * step)));
-            done;
-            Vlist v
-        | _ -> assert false
-
-    let pop ~loc vl =
-      match vl with
-        | [Vlist v] ->
-            begin try Vector.pop v
-            with Vector.Empty -> assert false end
-        | _ -> assert false
-
-    let append ~loc = function
-      | [Vlist v; x] -> Vector.push v x; Vnone
-      | _ -> assert false
-
-    let copy ~loc = function
-      | [Vlist l] -> Vlist (Vector.copy l)
-      | _ -> assert false
-
-    let clear ~loc = function
-      | [Vlist l] -> Vector.clear l; Vnone
-      | _ -> assert false
-
-    let reverse ~loc = function
-      | [Vlist l] ->
-          let len = Vector.length l in
-          let n = (len / 2) - 1 in
-          for i=0 to n do
-            let temp = Vector.get l i in
-            Vector.set l i (Vector.get l (len - i - 1));
-            Vector.set l (len - i - 1) temp
-          done;
-          Vnone
-      | _ -> assert false
-
-    let sort ~loc = function
-      | [Vlist l] ->
-          Vector.sort (py_compare ~loc) l;
-          Vnone
-      | _ -> assert false
-
-    let () =
-      Hashtbl.add list_func_table "pop" pop;
-      Hashtbl.add list_func_table "append" append;
-      Hashtbl.add list_func_table "copy" copy;
-      Hashtbl.add list_func_table "clear" clear;
-      Hashtbl.add list_func_table "reverse" reverse;
-      Hashtbl.add list_func_table "sort" sort;
-
-      Hashtbl.add std_func_table "int" int;
-      Hashtbl.add std_func_table "print" print;
-      Hashtbl.add std_func_table "range" range;
-      Hashtbl.add std_func_table "input" input;
-      Hashtbl.add std_func_table "randint" randint;
-
-  end
-
-let print_env e =
-  Printf.printf "ENV VARS: [\n";
-  (* Hashtbl.iter (fun s v -> Format.sprintf "  %s := %a@." s value_to_string v) e.vars;
-  Printf.printf "]\n";
-  Printf.printf "ENV FUNCS: [\n";
-  Hashtbl.iter (fun s (sl, _) -> Printf.printf "  %s(%s)\n" s (String.concat "," sl)) e.funcs; *)
-  Printf.printf "]\n"
-
-let transform_idx v idx =
-  if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
-
-let py_div_mod n1 n2 =
-  let q, r = BigInt.euclidean_div_mod n1 n2 in
-  if BigInt.sign n2 >= 0 then (q, r)
-  else
-    let q = if BigInt.sign r > 0 then BigInt.sub q BigInt.one else q in
-    let r = if BigInt.sign r > 0 then BigInt.add r n2 else r in
-    (q, r)
-
-let py_div n1 n2 = fst (py_div_mod n1 n2)
-let py_mod n1 n2 = snd (py_div_mod n1 n2)
 
 let binop_op = function
   | Badd -> BigInt.add
@@ -246,6 +119,184 @@ let binop_logic = function
   | Band -> (&&)
   | Bor ->  (||)
   | _    -> assert false
+
+module Primitives =
+  struct
+
+    type t = (string, loc:Loc.position -> value list -> value) Hashtbl.t
+    let list_func_table:t = Hashtbl.create 6
+    let std_func_table:t = Hashtbl.create 6
+
+    let input ~loc vl =
+      let aux s =
+        Printf.printf "%s" s;
+        read_line ()
+      in
+      match vl with
+        | [v] -> Vstring (aux (Format.sprintf "%a" value_to_string v))
+        | [] -> Vstring (aux "")
+        | l -> Loc.errorm ~loc "TypeError: input expected at most 1 argument, got %d" (List.length l)
+
+    let int ~loc vl =
+      match vl with
+        | [Vint i] -> Vint i
+        | [Vbool b] -> if b then Vint (BigInt.one) else Vint (BigInt.zero)
+        | [Vstring s] -> begin try Vint (BigInt.of_string s) 
+                               with Failure _s -> Loc.errorm ~loc "ValueError: invalid literal for int() with base 10: '%s'" s
+                         end
+        
+        | [v] -> Loc.errorm ~loc "int() argument must be a string, a number or a bool, not '%s'" (type_to_string v)
+        | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
+
+    let print ~loc vl =
+      let rec aux vl =
+        match vl with
+          | [v] -> Format.sprintf "%a" value_to_string v
+          | v::lv -> Format.sprintf "%a %s" value_to_string v (aux lv)
+          | _ -> ""
+      in
+      Format.printf "%s\n" (aux vl);
+      Vnone
+
+    let randint ~loc vl =
+      match vl with
+        | [Vint lo; Vint hi] ->
+          let lo = BigInt.to_int lo in
+          let hi = BigInt.to_int hi in
+          if hi < lo then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo hi
+          Random.self_init ();
+          Vint (BigInt.of_int (Random.int (hi + 1) + lo))
+        | [v1; v2] -> Loc.errorm ~loc "TypeError: randint() arguments must be int, not '%s' and '%s'" (type_to_string v1) (type_to_string v2)
+        | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
+
+    let range ~loc vl =
+      let aux lo hi =
+        let lo = BigInt.to_int lo in
+        let hi = BigInt.to_int hi in
+        if lo > hi then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" lo hi
+        else
+          let v = Vector.make (hi - lo) (Vint BigInt.zero) in
+          for i=lo to hi-1 do
+            Vector.set v (i - lo) (Vint (BigInt.of_int i));
+          done;
+          Vlist v
+      in
+      match vl with
+        | [Vint hi] -> aux BigInt.zero hi
+        | [v] -> Loc.errorm ~loc "TypeError: range() arguments must be int, not '%s'" (type_to_string v)
+        | [Vint lo; Vint hi] -> aux lo hi
+        | [v1; v2] -> Loc.errorm ~loc "TypeError: range() arguments must be int, not '%s' and '%s'" (type_to_string v1) (type_to_string v2)
+        | [Vint le; Vint ri; Vint step] ->
+          let le = BigInt.to_int le in
+          let ri = BigInt.to_int ri in
+          let step = BigInt.to_int step in
+          if (le > ri || step <= 0) && (ri > le || step >= 0) then
+            Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" le ri step
+          else
+            let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
+            let v = Vector.make len (Vint BigInt.zero) in
+            for i=0 to len-1 do
+              Vector.set v i (Vint (BigInt.of_int (le + i * step)));
+            done;
+            Vlist v
+        | [v1; v2; v3] -> 
+          Loc.errorm ~loc "TypeError: range() arguments must be int, not '%s', '%s' and '%s'" 
+                          (type_to_string v1) (type_to_string v2) (type_to_string v3)
+        | [] -> Loc.errorm ~loc "TypeError: range expected at least 1 argument, got 0"
+        | l -> Loc.errorm ~loc "TypeError: range expected at most 3 arguments, got %d" (List.length l)
+
+    let type_error m args i = 
+      Format.sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
+    
+    let attribute_error t m = 
+      Format.sprintf "AttributeError: '%s' object has no attribute '%s'" (type_to_string t) m
+
+    let pop ~loc vl =
+      match vl with
+        | [Vlist v] ->
+            begin try Vector.pop v
+            with Vector.Empty -> assert false end
+        | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
+        | v::l -> Loc.errorm ~loc "%s" (attribute_error v "pop")
+        | _ -> assert false
+
+    let append ~loc = function
+      | [Vlist v; x] -> Vector.push v x; Vnone
+      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "append" "one" (List.length l))
+      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "append")
+      | _ -> assert false
+
+    let copy ~loc = function
+      | [Vlist l] -> Vlist (Vector.copy l)
+      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "copy" "zero" (List.length l))
+      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "copy")
+      | _ -> assert false
+
+    let clear ~loc = function
+      | [Vlist l] -> Vector.clear l; Vnone
+      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "clear" "zero" (List.length l))
+      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "clear")
+      | _ -> assert false
+
+    let reverse ~loc = function
+      | [Vlist l] ->
+          let len = Vector.length l in
+          let n = (len / 2) - 1 in
+          for i=0 to n do
+            let temp = Vector.get l i in
+            Vector.set l i (Vector.get l (len - i - 1));
+            Vector.set l (len - i - 1) temp
+          done;
+          Vnone
+      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
+      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "reverse")
+      | _ -> assert false
+
+    let sort ~loc = function
+      | [Vlist l] ->
+          Vector.sort (py_compare ~loc) l;
+          Vnone
+      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
+      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "sort")
+      | _ -> assert false
+    
+    let slice ~loc vl =
+      let aux lo hi l =
+        if lo < 0 then assert false
+        else if hi > Vector.length l then assert false
+        else if hi < lo then assert false
+        else
+          let len = hi - lo in
+          Vlist (Vector.sub l lo len)
+      in
+      match vl with
+        | [Vlist l; Vnone; Vnone] -> aux 0 (Vector.length l) l
+        | [Vlist l; Vnone; Vint hi] -> aux 0 (transform_idx l hi |> BigInt.to_int) l
+        | [Vlist l; Vint lo; Vnone] -> aux (transform_idx l lo |> BigInt.to_int) (Vector.length l) l
+        | [Vlist l; Vint lo; Vint hi] ->
+          let lo = transform_idx l lo |> BigInt.to_int in
+          let hi = transform_idx l hi |> BigInt.to_int in
+          aux lo hi l
+        | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "slice" "two" (List.length l))
+        | v::l -> Loc.errorm ~loc "%s" (attribute_error v "slice")
+        | _ -> assert false
+
+    let () =
+      Hashtbl.add list_func_table "pop" pop;
+      Hashtbl.add list_func_table "append" append;
+      Hashtbl.add list_func_table "copy" copy;
+      Hashtbl.add list_func_table "clear" clear;
+      Hashtbl.add list_func_table "reverse" reverse;
+      Hashtbl.add list_func_table "sort" sort;
+      
+      Hashtbl.add std_func_table "int" int;
+      Hashtbl.add std_func_table "print" print;
+      Hashtbl.add std_func_table "range" range;
+      Hashtbl.add std_func_table "input" input;
+      Hashtbl.add std_func_table "randint" randint;
+      Hashtbl.add std_func_table "slice" slice;
+
+  end
 
 let rec expr (env: env) (e: expr): value =
   match e.expr_desc with

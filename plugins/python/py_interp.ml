@@ -143,22 +143,21 @@ module Primitives =
         | l   -> Loc.errorm ~loc
             "TypeError: input expected at most 1 argument, got %d" (List.length l)
 
-    let int ~loc vl =
-      match vl with
-        | [Vint i] -> Vint i
-        | [Vbool b] ->
-            if b then Vint (BigInt.one)
-            else Vint (BigInt.zero)
-        | [Vstring s] ->
-            begin try Vint (BigInt.of_string s)
-            with Failure _ ->
-              Loc.errorm ~loc
-              "ValueError: invalid literal for int() with base 10: '%s'" s
-            end
-        | [v] -> Loc.errorm ~loc
-            "int() argument must be a string, a number or a bool, not '%s'"
-            (type_to_string v)
-        | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
+    let int ~loc = function
+      | [Vint i] -> Vint i
+      | [Vbool b] ->
+          if b then Vint (BigInt.one)
+          else Vint (BigInt.zero)
+      | [Vstring s] ->
+          begin try Vint (BigInt.of_string s)
+          with Failure _ ->
+            Loc.errorm ~loc
+            "ValueError: invalid literal for int() with base 10: '%s'" s
+          end
+      | [v] -> Loc.errorm ~loc
+          "int() argument must be a string, a number or a bool, not '%s'"
+          (type_to_string v)
+      | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
     let print ~loc vl =
       let rec aux vl =
@@ -170,17 +169,16 @@ module Primitives =
       Format.printf "%s\n" (aux vl);
       Vnone
 
-    let randint ~loc vl =
-      match vl with
-        | [Vint lo; Vint hi] ->
-            let lo = BigInt.to_int lo in
-            let hi = BigInt.to_int hi in
-            if hi < lo then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo hi;
-            Vint (BigInt.of_int (Random.int (hi + 1) + lo))
-        | [v1; v2] -> Loc.errorm ~loc
-            "TypeError: randint() arguments must be int, not '%s' and '%s'"
-            (type_to_string v1) (type_to_string v2)
-        | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
+    let randint ~loc = function
+      | [Vint lo; Vint hi] ->
+          let lo = BigInt.to_int lo in
+          let hi = BigInt.to_int hi in
+          if hi < lo then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo hi;
+          Vint (BigInt.of_int (Random.int (hi + 1) + lo))
+      | [v1; v2] -> Loc.errorm ~loc
+          "TypeError: randint() arguments must be int, not '%s' and '%s'"
+          (type_to_string v1) (type_to_string v2)
+      | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
 
     let range ~loc vl =
       let aux lo hi =
@@ -225,7 +223,9 @@ module Primitives =
         | [] ->
             Loc.errorm ~loc "TypeError: range expected at least 1 argument, got 0"
         | l ->
-            Loc.errorm ~loc "TypeError: range expected at most 3 arguments, got %d" (List.length l)
+            Loc.errorm ~loc
+              "TypeError: range expected at most 3 arguments, got %d"
+              (List.length l)
 
     let type_error m args i =
       Format.sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
@@ -233,16 +233,17 @@ module Primitives =
     let attribute_error t m =
       Format.sprintf "AttributeError: '%s' object has no attribute '%s'" (type_to_string t) m
 
-    let pop ~loc vl =
-      match vl with
-        | [Vlist v] ->
-            begin try Vector.pop v
-            with Vector.Empty -> assert false end
-        | Vlist v::l ->
-            Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
-        | v::l ->
-            Loc.errorm ~loc "%s" (attribute_error v "pop")
-        | _ -> assert false
+    let pop ~loc = function
+      | [Vlist v] ->
+          begin try Vector.pop v
+          with Vector.Empty ->
+            Loc.errorm ~loc "IndexError: pop from empty list"
+          end
+      | Vlist v::l ->
+          Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
+      | v::l ->
+          Loc.errorm ~loc "%s" (attribute_error v "pop")
+      | _ -> assert false
 
     let append ~loc = function
       | [Vlist v; x] -> Vector.push v x; Vnone
@@ -280,8 +281,10 @@ module Primitives =
       | [Vlist l] ->
           Vector.sort (py_compare ~loc) l;
           Vnone
-      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
-      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "sort")
+      | Vlist v::l ->
+          Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
+      | v::l ->
+          Loc.errorm ~loc "%s" (attribute_error v "sort")
       | _ -> assert false
 
     let slice ~loc vl =

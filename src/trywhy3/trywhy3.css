@@ -226,6 +226,7 @@ body {
 /******* Terminal *********/
 
 .why3-term {
+  border-radius: 2%;
   background-color: black;
   background-image: radial-gradient(
     rgba(50, 50, 50, 0.75), black 120%

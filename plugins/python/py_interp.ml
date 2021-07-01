@@ -4,8 +4,8 @@ open Py_ast
 open Format
 
 let () = Random.self_init ()
-let input_ref = ref (fun (s:string) -> ())
-let print_ref = ref (fun (s:string) -> s)
+let print_ref = ref (fun (_s:string) -> ())
+let input_ref = ref (fun (s:string) -> s)
 
 let get_vec v i =
   if i < Vector.length v && i >= 0 then Vector.get v i
@@ -136,8 +136,7 @@ module Primitives =
 
     let input ~loc vl =
       let aux v =
-        printf "%a" print_value v;
-        read_line ()
+        !input_ref (asprintf "%a" print_value v)
       in
       match vl with
         | [v] -> Vstring (aux v)
@@ -163,8 +162,8 @@ module Primitives =
 
     let print ~loc vl =
       let rec aux = function
-        | [v] -> printf "%a@." print_value v
-        | v::lv -> printf "%a " print_value v; aux lv
+        | [v] -> !print_ref (asprintf "%a@." print_value v)
+        | v::lv -> !print_ref (asprintf "%a " print_value v); aux lv
         | [] -> ()
       in
       aux vl;
@@ -330,6 +329,7 @@ module Primitives =
       Hashtbl.add std_func_table "range" range;
       Hashtbl.add std_func_table "randint" randint;
       Hashtbl.add std_func_table "slice" slice;
+      Hashtbl.add std_func_table "input" input;
 
   end
 
@@ -511,34 +511,15 @@ and bool (env: env) (e: expr): bool =
   | Vstring s -> s <> ""
   | Vlist l   -> not (Vector.is_empty l)
 
-let interp file =
-  let env = mk_new_env () in
-  block env file
-
-let interpreter (input: string -> string) (print: string -> unit): unit =
-  let file = Sys.argv.(1) in
-  let c = open_in file in
-  let file = Py_lexer.parse file c in
+let interpreter (path:string) (input: string -> string) (print: string -> unit): unit =
+  print_ref := print;
+  input_ref := input;
+  let c = open_in path in
+  let file = Py_lexer.parse path c in
   let env = mk_new_env () in
   block env file
 
 let () =
-  let input = fun _ -> "" in
-  let print = fun _ -> () in
-  interpreter input print
-  (* let file = Sys.argv.(1) in
-  let c = open_in file in
-  let file = Py_lexer.parse file c in
-  interp file *)
-
-
-(* let () =
-  (* let file = Sys.argv.(1) in *)
-  let file =
-    "a = 10\n\
-    while a:\n\
-    \ta -= 1\n\
-    \tprint(aa)"
-  in
-  interpreter file (fun e -> "") (fun e -> ()) *)
-
+  let input = fun s -> Printf.printf "%s" s; read_line () in
+  let print = fun s -> Printf.printf "%s" s in
+  interpreter Sys.argv.(1) input print

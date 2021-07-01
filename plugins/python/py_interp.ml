@@ -22,31 +22,31 @@ type value =
   | Vlist   of value Vector.t
   | Vstring of string
 
-let rec type_to_string = function
-  | Vnone     -> "NoneType"
-  | Vbool _   -> "bool"
-  | Vint _    -> "int"
-  | Vstring _ -> "str"
-  | Vlist _   -> "list"
+let rec type_to_string fmt = function
+  | Vnone     -> fprintf fmt "NoneType"
+  | Vbool _   -> fprintf fmt "bool"
+  | Vint _    -> fprintf fmt "int"
+  | Vstring _ -> fprintf fmt "str"
+  | Vlist _   -> fprintf fmt "list"
 
-let binop_to_string = function
-  | Badd -> "+"
-  | Bsub -> "-"
-  | Bmul -> "*"
-  | Bdiv -> "//"
-  | Bmod -> "%"
-  | Beq  -> "=="
-  | Bneq -> "!="
-  | Blt  -> "<"
-  | Ble  -> "<="
-  | Bgt  -> ">"
-  | Bge  -> ">="
-  | Band -> "and"
-  | Bor ->  "or"
+let binop_to_string fmt = function
+  | Badd -> fprintf fmt "+"
+  | Bsub -> fprintf fmt "-"
+  | Bmul -> fprintf fmt "*"
+  | Bdiv -> fprintf fmt "//"
+  | Bmod -> fprintf fmt "%s" "%"
+  | Beq  -> fprintf fmt "=="
+  | Bneq -> fprintf fmt "!="
+  | Blt  -> fprintf fmt "<"
+  | Ble  -> fprintf fmt "<="
+  | Bgt  -> fprintf fmt ">"
+  | Bge  -> fprintf fmt ">="
+  | Band -> fprintf fmt "and"
+  | Bor  -> fprintf fmt  "or"
 
-let unop_to_string = function
-  | Uneg -> "-"
-  | Unot -> "not"
+let unop_to_string fmt = function
+  | Uneg -> fprintf fmt "-"
+  | Unot -> fprintf fmt "not"
 
 let rec print_value fmt = function
   | Vnone       -> fprintf fmt "None"
@@ -102,8 +102,8 @@ let rec py_compare v1 v2 ~loc =
         List.compare (py_compare ~loc) (vtol l1) (vtol l2)
   | _ ->
       Loc.errorm ~loc
-        "TypeError: comparison not supported between instances of '%s' and '%s'"
-        (type_to_string v1) (type_to_string v2)
+        "TypeError: comparison not supported between instances of '%a' and '%a'"
+        type_to_string v1 type_to_string v2
 
 let binop_op = function
   | Badd -> BigInt.add
@@ -157,8 +157,8 @@ module Primitives =
             "ValueError: invalid literal for int() with base 10: '%s'" s
           end
       | [v] -> Loc.errorm ~loc
-          "int() argument must be a string, a number or a bool, not '%s'"
-          (type_to_string v)
+          "int() argument must be a string, a number or a bool, not '%a'"
+          type_to_string v
       | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
     let print ~loc vl =
@@ -177,8 +177,8 @@ module Primitives =
           if hi < lo then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo hi;
           Vint (BigInt.of_int (Random.int (hi + 1) + lo))
       | [v1; v2] -> Loc.errorm ~loc
-          "TypeError: randint() arguments must be int, not '%s' and '%s'"
-          (type_to_string v1) (type_to_string v2)
+          "TypeError: randint() arguments must be int, not '%a' and '%a'"
+          type_to_string v1 type_to_string v2
       | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
 
   let range ~loc vl =
@@ -197,13 +197,13 @@ module Primitives =
         | [Vint hi] ->
             aux BigInt.zero hi
         | [v] ->
-            Loc.errorm ~loc "TypeError: range() arguments must be int, not '%s'" (type_to_string v)
+            Loc.errorm ~loc "TypeError: range() arguments must be int, not '%a'" type_to_string v
         | [Vint lo; Vint hi] ->
             aux lo hi
         | [v1; v2] ->
             Loc.errorm ~loc
-              "TypeError: range() arguments must be int, not '%s' and '%s'"
-              (type_to_string v1) (type_to_string v2)
+              "TypeError: range() arguments must be int, not '%a' and '%a'"
+              type_to_string v1 type_to_string v2
         | [Vint le; Vint ri; Vint step] ->
             let le = BigInt.to_int le in
             let ri = BigInt.to_int ri in
@@ -219,8 +219,8 @@ module Primitives =
               Vlist v
         | [v1; v2; v3] ->
             Loc.errorm ~loc
-              "TypeError: range() arguments must be int, not '%s', '%s' and '%s'"
-              (type_to_string v1) (type_to_string v2) (type_to_string v3)
+              "TypeError: range() arguments must be int, not '%a', '%a' and '%a'"
+              type_to_string v1 type_to_string v2 type_to_string v3
         | [] ->
             Loc.errorm ~loc "TypeError: range expected at least 1 argument, got 0"
         | l ->
@@ -232,7 +232,8 @@ module Primitives =
       sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
 
     let attribute_error t m =
-      sprintf "AttributeError: '%s' object has no attribute '%s'" (type_to_string t) m
+      sprintf "AttributeError: '%s' object has no attribute '%s'"
+        (asprintf "%a" type_to_string t) m
 
     let pop ~loc = function
       | [Vlist v] ->
@@ -347,13 +348,9 @@ let rec expr (env: env) (e: expr): value =
   | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
       begin match expr env e1, expr env e2 with
       | Vint n1, Vint n2 -> let b = binop_op b in Vint (b n1 n2)
-      | v1, v2 ->
-          let t1 = type_to_string v1 in
-          let t2 = type_to_string v2 in
-          let b = binop_to_string b in
-          Loc.errorm ~loc:e.expr_loc
-            "TypeError: unsupported operand type(s) for %s: '%s' and '%s'"
-            b t1 t2
+      | v1, v2 -> Loc.errorm ~loc:e.expr_loc
+          "TypeError: unsupported operand type(s) for %a: '%a' and '%a'"
+          binop_to_string b type_to_string v1 type_to_string v2
       end
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
       let e1 = expr env e1 in
@@ -370,11 +367,8 @@ let rec expr (env: env) (e: expr): value =
       begin match u, v with
       | Uneg, Vint n  -> Vint (BigInt.minus n)
       | Unot, Vbool b -> Vbool (not b)
-      | _ ->
-          let t = type_to_string v in
-          let u = unop_to_string u in
-          Loc.errorm ~loc:e.expr_loc
-            "TypeError: bad operand type for unary %s: '%s'" u t
+      | _ -> Loc.errorm ~loc:e.expr_loc
+        "TypeError: bad operand type for unary %a: '%a'" unop_to_string u type_to_string v
       end
   | Ecall (id, params) ->
       begin try
@@ -416,7 +410,7 @@ let rec expr (env: env) (e: expr): value =
       let n = match e2 with
         | Vint n -> BigInt.to_int n
         | _ -> Loc.errorm ~loc:e.expr_loc
-            "TypeError: can't multiply sequence by non-int of type '%s'" (type_to_string e2)
+            "TypeError: can't multiply sequence by non-int of type '%a'" type_to_string e2
       in
       Vlist (Vector.make ~dummy:Vnone n e1)
   | Eget (e1, e2) ->
@@ -431,11 +425,10 @@ let rec expr (env: env) (e: expr): value =
           end
         | Vlist _, non_int ->
             Loc.errorm ~loc:e.expr_loc
-              "TypeError: list indices must be integers or slices, not %s"
-              (type_to_string non_int)
-        | x, _ ->
-            Loc.errorm ~loc:e.expr_loc
-              "TypeError: '%s' object is not subscriptable" (type_to_string x)
+              "TypeError: list indices must be integers or slices, not %a"
+              type_to_string non_int
+        | x, _ -> Loc.errorm ~loc:e.expr_loc
+              "TypeError: '%a' object is not subscriptable" type_to_string x
       end
 
 and stmt (env: env) (s: stmt): unit =
@@ -470,8 +463,8 @@ and stmt (env: env) (s: stmt): unit =
             ) l
           with Break -> () end
       | non_list -> Loc.errorm ~loc:e.expr_loc
-          "TypeError: '%s' object is not iterable"
-          (type_to_string non_list)
+          "TypeError: '%a' object is not iterable"
+          type_to_string non_list
       end;
   | Seval e -> let _ = expr env e in ()
   | Sset (e1, e2, e3) ->
@@ -487,11 +480,11 @@ and stmt (env: env) (s: stmt): unit =
           end
         | Vlist _, non_int, _ ->
             Loc.errorm ~loc:s.stmt_loc
-              "TypeError: list indices must be integers or slices, not %s"
-              (type_to_string non_int)
+              "TypeError: list indices must be integers or slices, not %a"
+              type_to_string non_int
         | x, _, _ ->
             Loc.errorm ~loc:s.stmt_loc
-              "TypeError: '%s' object is not subscriptable" (type_to_string x)
+              "TypeError: '%a' object is not subscriptable" type_to_string x
     end
   | Sbreak -> raise Break
   | Scontinue -> raise Continue
@@ -522,13 +515,9 @@ let interp file =
   let env = mk_new_env () in
   block env file
 
-(* let interpreter (file: string) (input: string -> string) (print: string -> unit): unit =
-  let c = open_in file in
-  let file = Py_lexer.parse file c in
-  interp file *)
-
 let () =
   let file = Sys.argv.(1) in
   let c = open_in file in
   let file = Py_lexer.parse file c in
   interp file
+

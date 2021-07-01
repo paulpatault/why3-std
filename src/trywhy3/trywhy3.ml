@@ -1341,13 +1341,16 @@ module Terminal = struct
   let id_tab = "why3-term-tab"
   let id_div = "why3-term"
   let el_tab = getElement AsHtml.span id_tab
-  let el_div = getElement AsHtml.span id_div
+  let el_div = getElement AsHtml.div id_div
+
+  let input_str = ref ""
 
   let display () =
     el_tab ##. style ##. display := !!"inline-block"
 
   let hide () =
-    el_tab ##. style ##. display := !!"none"
+    el_tab ##. style ##. display := !!"none";
+    Tabs.focus "why3-task-list-tab"
 
   let focus () =
     if !FormatList.selected_format = "python"
@@ -1364,16 +1367,30 @@ module Terminal = struct
   let clear () =
     el_div ##. innerHTML := !!"$>"
 
+  let wait () =
+    while !input_str = "" do
+      ()
+    done
+
   let input str =
+    input_str := "";
+    let old_inner = Js.to_string (el_div ##. innerHTML) in
     el_div ##. innerHTML :=
-      !!(Js.to_string (el_div ##. innerHTML)
-      ^ (Printf.sprintf "<input type=text placeholder=%s>" str));
-      
-    let input_el = getElement AsHtml.input "input_terminal" in
-    addEventListener false input_el !!"keyup" (fun ev ->  Printf.printf "%s" (if ev ##. keyCode = 13 then "lezguongue" else "paslezgongue"));
-    
+      !!(old_inner
+      ^ (Printf.sprintf "<input id='input-terminal' type='text' placeholder='%s'>" str));
+
+    let input_el = getElement AsHtml.input "input-terminal" in
+
+    input_el ##. onkeyup :=
+      Dom.handler (fun ev ->
+        if ev ##. keyCode = 13 then
+          (input_str := Js.to_string (input_el ##. value);
+          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ !input_str););
+        Js._false);
+
     el_div ##. scrollTop := el_div ##. scrollHeight;
-    ""
+    
+    !input_str
 
 end
 
@@ -1409,8 +1426,8 @@ let () =
 
   KeyBinding.add_global ~alt:Js._true 32 (fun () -> Controller.(why3_custom_transform (Split(!alt_ergo_min_steps))) ignore ());
 
-  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucouc");
-  KeyBinding.add_global ~ctrl:Js._true 72 (fun () -> Terminal.input "input:" |> Terminal.print);
+  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucou");
+  KeyBinding.add_global ~ctrl:Js._true 72 (fun () -> let _ = Terminal.input "input:\n" in ());
   KeyBinding.add_global ~ctrl:Js._true 13 (fun () -> ());
 
 

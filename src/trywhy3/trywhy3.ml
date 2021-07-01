@@ -48,9 +48,9 @@ let getElement cast id =
     log ("Element " ^ id ^ " does not exist or has invalid type");
     assert false
 
-let addMouseEventListener prevent o (e : Js.js_string Js.t) f =
+let addEventListener prevent o (e : Js.js_string Js.t) f =
     let cb =
-      Js.wrap_callback (fun (e : Dom_html.mouseEvent Js.t) ->
+      Js.wrap_callback (fun (e) ->
           if prevent then Dom.preventDefault e;
           f e;
           Js._false
@@ -59,6 +59,7 @@ let addMouseEventListener prevent o (e : Js.js_string Js.t) f =
                   [| inject e;
                     inject cb;
                     inject Js._false |])
+
 
 
 
@@ -305,7 +306,7 @@ module ContextMenu =
       !alt_ergo_context_steps.(i)
 
 
-    let () = addMouseEventListener false task_menu !!"mouseleave" (fun _ -> hide())
+    let () = addEventListener false task_menu !!"mouseleave" (fun _ -> hide())
 
   end
 
@@ -693,7 +694,7 @@ module TaskList =
                 select_task id span locs pretty
               end;
             Js._false);
-      addMouseEventListener true span !!"contextmenu" (fun e ->
+      addEventListener true span !!"contextmenu" (fun e ->
           clear_task_selection ();
           select_task id span locs pretty;
           let x = max 0 (e ##. clientX - 2) in
@@ -1364,7 +1365,15 @@ module Terminal = struct
     el_div ##. innerHTML := !!"$>"
 
   let input str =
-    el_div ##. innerHTML := !! (Js.to_string (el_div ##. innerHTML) ^ str);
+
+    let input_html = "<input id='input_terminal' type=text/>" in
+    el_div ##. innerHTML := !! (Js.to_string (el_div ##. innerHTML) ^ input_html);
+
+    let input_el = getElement AsHtml.input "input_terminal" in
+    input_el ##. innerHTML := !!"salut";
+    addEventListener false input_el !!"keyup" (fun ev ->  Printf.printf "%s" (if ev ##. keyCode = 13 then "lezguongue" else "paslezgongue"));
+
+
     el_div ##. scrollTop := el_div ##. scrollHeight;
     ""
 

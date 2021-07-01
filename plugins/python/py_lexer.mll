@@ -179,12 +179,6 @@ and string_quote = parse
     stack := [0];  (* reinitialise indentation stack *)
     Why3.Loc.with_location (Py_parser.file next_token) lb
 
-  let parse_string file c =
-    let lb = Lexing.from_string c in
-    Why3.Loc.set_file file lb;
-    stack := [0];  (* reinitialise indentation stack *)
-    Why3.Loc.with_location (Py_parser.file next_token) lb
-
   (* Entries for transformations: similar to lexer.mll *)
   let build_parsing_function entry lb = Why3.Loc.with_location (entry next_token) lb
 

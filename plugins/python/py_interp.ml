@@ -515,12 +515,30 @@ let interp file =
   let env = mk_new_env () in
   block env file
 
-let () =
-
-
-
+let interpreter (input: string -> string) (print: string -> unit): unit =
   let file = Sys.argv.(1) in
   let c = open_in file in
   let file = Py_lexer.parse file c in
-  interp file
+  let env = mk_new_env () in
+  block env file
+
+let () =
+  let input = fun _ -> "" in
+  let print = fun _ -> () in
+  interpreter input print
+  (* let file = Sys.argv.(1) in
+  let c = open_in file in
+  let file = Py_lexer.parse file c in
+  interp file *)
+
+
+(* let () =
+  (* let file = Sys.argv.(1) in *)
+  let file =
+    "a = 10\n\
+    while a:\n\
+    \ta -= 1\n\
+    \tprint(aa)"
+  in
+  interpreter file (fun e -> "") (fun e -> ()) *)
 

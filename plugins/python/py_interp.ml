@@ -134,15 +134,11 @@ module Primitives =
     let list_func_table:t = Hashtbl.create 6
     let std_func_table:t = Hashtbl.create 6
 
-    let input ~loc vl =
-      let aux v =
-        !input_ref (asprintf "%a" print_value v)
-      in
-      match vl with
-        | [v] -> Vstring (aux v)
-        | []  -> Vstring (aux (Vstring ""))
-        | l   -> Loc.errorm ~loc
-            "TypeError: input expected at most 1 argument, got %d" (List.length l)
+    let input ~loc = function
+      | [v] -> Vstring (!input_ref (asprintf "%a" print_value v))
+      | []  -> Vstring (!input_ref "")
+      | l   -> Loc.errorm ~loc
+          "TypeError: input expected at most 1 argument, got %d" (List.length l)
 
     let int ~loc = function
       | [Vint i] -> Vint i
@@ -165,16 +161,16 @@ module Primitives =
         | [v] -> !print_ref (asprintf "%a@." print_value v)
         | v::lv -> !print_ref (asprintf "%a " print_value v); aux lv
         | [] -> ()
-      in
-      aux vl;
+      in aux vl;
       Vnone
 
     let randint ~loc = function
       | [Vint lo; Vint hi] ->
-          let lo = BigInt.to_int lo in
-          let hi = BigInt.to_int hi in
-          if hi < lo then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo hi;
-          Vint (BigInt.of_int (Random.int (hi + 1) + lo))
+          let lo' = BigInt.to_int lo in
+          let hi' = BigInt.to_int hi in
+          if BigInt.compare lo hi > 0
+          then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo' hi';
+          Vint (BigInt.of_int (Random.int (hi' - lo' + 1) + lo'))
       | [v1; v2] -> Loc.errorm ~loc
           "TypeError: randint() arguments must be int, not '%a' and '%a'"
           type_to_string v1 type_to_string v2
@@ -182,13 +178,14 @@ module Primitives =
 
   let range ~loc vl =
       let aux lo hi =
-        let lo = BigInt.to_int lo in
-        let hi = BigInt.to_int hi in
-        if lo > hi then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" lo hi
+        let lo' = BigInt.to_int lo in
+        let hi' = BigInt.to_int hi in
+        if BigInt.compare lo hi > 0
+        then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" lo' hi'
         else
-          let v = Vector.make (hi - lo) (Vint BigInt.zero) in
-          for i=lo to hi-1 do
-            set_vec v (i - lo) (Vint (BigInt.of_int i));
+          let v = Vector.make (hi' - lo') (Vint BigInt.zero) in
+          for i=lo' to hi'-1 do
+            set_vec v (i - lo') (Vint (BigInt.of_int i));
           done;
           Vlist v
       in
@@ -207,8 +204,8 @@ module Primitives =
             let le = BigInt.to_int le in
             let ri = BigInt.to_int ri in
             let step = BigInt.to_int step in
-            if (le > ri || step <= 0) && (ri > le || step >= 0) then
-              Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" le ri step
+            if (le > ri || step <= 0) && (ri > le || step >= 0)
+            then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" le ri step
             else
               let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
               let v = Vector.make len (Vint BigInt.zero) in
@@ -290,8 +287,8 @@ module Primitives =
 
     let slice ~loc vl =
       let aux lo hi l =
-        if lo < 0 then assert false
-        else if hi > Vector.length l then 
+        if lo < 0 then Loc.errorm ~loc "ValueError: list index out of range"
+        else if hi > Vector.length l then
           Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
         else if hi < lo then
           Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
@@ -339,7 +336,7 @@ let rec expr (env: env) (e: expr): value =
   | Ebool b   -> Vbool b
   | Eint s    -> Vint (BigInt.of_string s)
   | Estring s -> Vstring s
-  | Eident x  ->
+  | Eident (x: Why3.Ptree.ident)  ->
       begin try
         Hashtbl.find env.vars x.id_str
       with Not_found ->
@@ -409,7 +406,7 @@ let rec expr (env: env) (e: expr): value =
       let e2 = expr env e2 in
       let n = match e2 with
         | Vint n -> BigInt.to_int n
-        | _ -> Loc.errorm ~loc:e.expr_loc
+        | _e -> Loc.errorm ~loc:e.expr_loc
             "TypeError: can't multiply sequence by non-int of type '%a'" type_to_string e2
       in
       Vlist (Vector.make ~dummy:Vnone n e1)
@@ -423,12 +420,12 @@ let rec expr (env: env) (e: expr): value =
           with Invalid_argument _ ->
             Loc.errorm ~loc:e.expr_loc "IndexError: list index out of range"
           end
-        | Vlist _, non_int ->
+        | Vlist _v, non_int ->
             Loc.errorm ~loc:e.expr_loc
               "TypeError: list indices must be integers or slices, not %a"
               type_to_string non_int
-        | x, _ -> Loc.errorm ~loc:e.expr_loc
-              "TypeError: '%a' object is not subscriptable" type_to_string x
+        | non_list, _e -> Loc.errorm ~loc:e.expr_loc
+              "TypeError: '%a' object is not subscriptable" type_to_string non_list
       end
 
 and stmt (env: env) (s: stmt): unit =
@@ -472,19 +469,19 @@ and stmt (env: env) (s: stmt): unit =
     let e2 = expr env e2 in
     let e3 = expr env e3 in
     begin match e1, e2, e3 with
-      | Vlist v, Vint i, e ->
-          begin try
-            set_vec v (transform_idx v i |> BigInt.to_int) e
-          with Invalid_argument _ ->
-            Loc.errorm ~loc:s.stmt_loc "IndexError: list index out of range"
-          end
-        | Vlist _, non_int, _ ->
-            Loc.errorm ~loc:s.stmt_loc
-              "TypeError: list indices must be integers or slices, not %a"
-              type_to_string non_int
-        | x, _, _ ->
-            Loc.errorm ~loc:s.stmt_loc
-              "TypeError: '%a' object is not subscriptable" type_to_string x
+    | Vlist v, Vint i, e ->
+        begin try
+          set_vec v (transform_idx v i |> BigInt.to_int) e
+        with Invalid_argument _ ->
+          Loc.errorm ~loc:s.stmt_loc "IndexError: list index out of range"
+        end
+    | Vlist _v, non_int, _e ->
+        Loc.errorm ~loc:s.stmt_loc
+          "TypeError: list indices must be integers or slices, not %a"
+          type_to_string non_int
+    | non_list, _i, _e ->
+        Loc.errorm ~loc:s.stmt_loc
+          "TypeError: '%a' object is not subscriptable" type_to_string non_list
     end
   | Sbreak -> raise Break
   | Scontinue -> raise Continue
@@ -493,15 +490,12 @@ and stmt (env: env) (s: stmt): unit =
 and block (env: env) (b: block): unit =
   match b with
   | [] -> ()
-  | e::k ->
-      begin match e with
-      | Dstmt s -> stmt env s
-      | Ddef (id, params, _, b) ->
-        Hashtbl.remove env.funcs id.id_str;
-        Hashtbl.add env.funcs id.id_str (List.map (fun (e: Py_ast.ident) -> e.id_str) params, b)
-      | Dlogic _ | Dimport _ -> ()
-      end;
+  | Dstmt s::k -> stmt env s; block env k
+  | Ddef (id, params, _, b)::k ->
+      Hashtbl.remove env.funcs id.id_str;
+      Hashtbl.add env.funcs id.id_str (List.map (fun (e: Py_ast.ident) -> e.id_str) params, b);
       block env k
+  | _::k -> block env k
 
 and bool (env: env) (e: expr): bool =
   match expr env e with

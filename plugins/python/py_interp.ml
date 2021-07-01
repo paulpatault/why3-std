@@ -4,8 +4,8 @@ open Py_ast
 open Format
 
 let () = Random.self_init ()
-(* let input = ref (fun _ -> failwith "todo")
-let print = ref (fun _ -> failwith "todo") *)
+let input_ref = ref (fun (s:string) -> ())
+let print_ref = ref (fun (s:string) -> s)
 
 let get_vec v i =
   if i < Vector.length v && i >= 0 then Vector.get v i
@@ -516,6 +516,9 @@ let interp file =
   block env file
 
 let () =
+
+
+
   let file = Sys.argv.(1) in
   let c = open_in file in
   let file = Py_lexer.parse file c in

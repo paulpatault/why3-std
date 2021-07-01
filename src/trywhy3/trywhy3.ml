@@ -1365,15 +1365,13 @@ module Terminal = struct
     el_div ##. innerHTML := !!"$>"
 
   let input str =
-
-    let input_html = "<input id='input_terminal' type=text/>" in
-    el_div ##. innerHTML := !! (Js.to_string (el_div ##. innerHTML) ^ input_html);
-
+    el_div ##. innerHTML :=
+      !!(Js.to_string (el_div ##. innerHTML)
+      ^ (Printf.sprintf "<input type=text placeholder=%s>" str));
+      
     let input_el = getElement AsHtml.input "input_terminal" in
-    input_el ##. innerHTML := !!"salut";
     addEventListener false input_el !!"keyup" (fun ev ->  Printf.printf "%s" (if ev ##. keyCode = 13 then "lezguongue" else "paslezgongue"));
-
-
+    
     el_div ##. scrollTop := el_div ##. scrollHeight;
     ""
 
@@ -1411,7 +1409,7 @@ let () =
 
   KeyBinding.add_global ~alt:Js._true 32 (fun () -> Controller.(why3_custom_transform (Split(!alt_ergo_min_steps))) ignore ());
 
-  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucou");
+  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucoucouc");
   KeyBinding.add_global ~ctrl:Js._true 72 (fun () -> Terminal.input "input:" |> Terminal.print);
   KeyBinding.add_global ~ctrl:Js._true 13 (fun () -> ());
 

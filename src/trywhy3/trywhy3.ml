@@ -239,17 +239,19 @@ module Tabs = struct
         List.iter (fun tab ->
             tab ##. onclick :=
               Dom.handler (fun _ev ->
-                  let () =
-                    if Js.to_bool (tab ##. classList ## contains !!"why3-inactive") then
+                    if Js.to_bool (tab ##. classList ## contains !!"why3-inactive")
+                    then begin
                       List.iter (fun t ->
-                          ignore (t ##. classList ## toggle !!"why3-inactive")
-                        ) labels in
-                  Js._false)
+                        if not (Js.to_bool (t ##. classList ## contains !!"why3-inactive"))
+                        then ignore (t ##. classList ## toggle !!"why3-inactive")
+                      ) labels;
+                      ignore (tab ##. classList ## toggle !!"why3-inactive")
+                    end;
+                    Js._false)
           ) labels)
       tab_groups
 
   let focus id =
-
     (Dom_html.getElementById id) ## click
 
 end
@@ -1332,6 +1334,43 @@ module Controller =
 
 end
 
+
+module Terminal = struct
+
+  let id_tab = "why3-term-tab"
+  let id_div = "why3-term"
+  let el_tab = getElement AsHtml.span id_tab
+  let el_div = getElement AsHtml.span id_div
+
+  let display () =
+    el_tab ##. style ##. display := !!"inline-block"
+
+  let hide () =
+    el_tab ##. style ##. display := !!"none"
+
+  let focus () =
+    if !FormatList.selected_format = "python"
+    then (display (); Tabs.focus id_tab)
+
+  let init () =
+    el_div ##. innerHTML := !!"$> python your_file.py</br>"
+
+  let print str =
+    el_div ##. innerHTML :=
+      !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "</br>");
+    el_div ##. scrollTop := el_div ##. scrollHeight
+
+  let clear () =
+    el_div ##. innerHTML := !!"$>"
+
+  let input str =
+    el_div ##. innerHTML := !! (Js.to_string (el_div ##. innerHTML) ^ str);
+    el_div ##. scrollTop := el_div ##. scrollHeight;
+    ""
+
+end
+
+
 (* Initialisation *)
 let () =
 
@@ -1352,7 +1391,7 @@ let () =
   KeyBinding.add_global ~ctrl:Js._true ~shift:Js._true 90 Editor.redo;
   KeyBinding.add_global ~ctrl:Js._true 89 Editor.redo;
 
-  ToolBar.add_action Buttons.button_execute Controller.why3_execute;
+  ToolBar.add_action Buttons.button_execute (fun () -> Controller.why3_execute (); Terminal.focus ());
   KeyBinding.add_global ~alt:Js._true 69 Controller.why3_execute;
 
   ToolBar.add_action Buttons.button_compile (fun () -> Controller.(why3_parse (!alt_ergo_min_steps)));
@@ -1362,6 +1401,11 @@ let () =
   KeyBinding.add_global ~alt:Js._true 73 Controller.stop;
 
   KeyBinding.add_global ~alt:Js._true 32 (fun () -> Controller.(why3_custom_transform (Split(!alt_ergo_min_steps))) ignore ());
+
+  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucou");
+  KeyBinding.add_global ~ctrl:Js._true 72 (fun () -> Terminal.input "input:" |> Terminal.print);
+  KeyBinding.add_global ~ctrl:Js._true 13 (fun () -> ());
+
 
   ToolBar.add_action Buttons.button_settings Dialogs.(show setting_dialog);
   ToolBar.add_action Buttons.button_help (
@@ -1421,7 +1465,11 @@ let () =
   Dialogs.(set_onchange radio_wide (fun _ -> Panel.set_wide true));
   Dialogs.(set_onchange radio_column (fun _ -> Panel.set_wide false));
 
-  FormatList.(set_onchange select_format (fun () -> if not !ExampleList.has_been_updated then ExampleList.reset_example(); ExampleList.update_example ()))
+  FormatList.(set_onchange select_format
+    (fun () ->
+      if not !ExampleList.has_been_updated then ExampleList.reset_example();
+      ExampleList.update_example ();
+      Terminal.hide ()))
 
 let () =
   let url = new%js Url._URL (Dom_html.window ##. location ##. href) in

@@ -22,7 +22,7 @@ type value =
   | Vlist   of value Vector.t
   | Vstring of string
 
-let rec type_to_string fmt = function
+let type_to_string fmt = function
   | Vnone     -> fprintf fmt "NoneType"
   | Vbool _   -> fprintf fmt "bool"
   | Vint _    -> fprintf fmt "int"
@@ -240,28 +240,28 @@ module Primitives =
           with Vector.Empty ->
             Loc.errorm ~loc "IndexError: pop from empty list"
           end
-      | Vlist v::l ->
+      | Vlist _v::l ->
           Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
-      | v::l ->
+      | v::_l ->
           Loc.errorm ~loc "%s" (attribute_error v "pop")
       | [] -> assert false
 
     let append ~loc = function
       | [Vlist v; x] -> Vector.push v x; Vnone
-      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "append" "one" (List.length l))
-      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "append")
+      | Vlist _v::l -> Loc.errorm ~loc "%s" (type_error "append" "one" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "append")
       | [] -> assert false
 
     let copy ~loc = function
       | [Vlist l] -> Vlist (Vector.copy l)
-      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "copy" "zero" (List.length l))
-      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "copy")
+      | Vlist _v::l -> Loc.errorm ~loc "%s" (type_error "copy" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "copy")
       | [] -> assert false
 
     let clear ~loc = function
       | [Vlist l] -> Vector.clear l; Vnone
-      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "clear" "zero" (List.length l))
-      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "clear")
+      | Vlist _v::l -> Loc.errorm ~loc "%s" (type_error "clear" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "clear")
       | [] -> assert false
 
     let reverse ~loc = function
@@ -274,17 +274,17 @@ module Primitives =
             set_vec l (len - i - 1) temp
           done;
           Vnone
-      | Vlist v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
-      | v::l -> Loc.errorm ~loc "%s" (attribute_error v "reverse")
+      | Vlist _v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "reverse")
       | [] -> assert false
 
     let sort ~loc = function
       | [Vlist l] ->
           Vector.sort (py_compare ~loc) l;
           Vnone
-      | Vlist v::l ->
+      | Vlist _v::l ->
           Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
-      | v::l ->
+      | v::_l ->
           Loc.errorm ~loc "%s" (attribute_error v "sort")
       | [] -> assert false
 
@@ -310,9 +310,9 @@ module Primitives =
             let lo = transform_idx l lo |> BigInt.to_int in
             let hi = transform_idx l hi |> BigInt.to_int in
             aux lo hi l
-        | Vlist v::l ->
+        | Vlist _v::l ->
             Loc.errorm ~loc "%s" (type_error "slice" "two" (List.length l))
-        | v::l ->
+        | v::_l ->
             Loc.errorm ~loc "%s" (attribute_error v "slice")
         | [] -> assert false
 

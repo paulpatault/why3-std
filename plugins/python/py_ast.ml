@@ -27,6 +27,7 @@ type atom =
   | Ebool of bool
   | Eint of string
   | Estring of string
+  | Evector of atom Vector.t
 
 type expr = {
   expr_desc: expr_desc;

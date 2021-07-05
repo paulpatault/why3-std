@@ -143,7 +143,9 @@ let rec expr env {Py_ast.expr_loc = loc; Py_ast.expr_desc = d } = match d with
       | Py_ast.Eint s ->
         constant_s ~loc s
       | Py_ast.Estring _s ->
-      mk_unit ~loc (*FIXME*)
+        mk_unit ~loc (*FIXME*)
+      | Py_ast.Evector _ ->
+          assert false
       end
   | Py_ast.Eident id ->
     if not (Mstr.mem id.id_str env.vars) then

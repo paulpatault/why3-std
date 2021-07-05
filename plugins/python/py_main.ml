@@ -93,8 +93,8 @@ let empty_env =
 
 let is_const (e: Py_ast.expr list) =
   match List.nth e 2 with
-  | {Py_ast.expr_desc=Eint "1";_}  -> 1
-  | {Py_ast.expr_desc=Eunop (Uneg, {Py_ast.expr_desc=Eint "1";_});_} -> -1
+  | {Py_ast.expr_desc=Py_ast.Econst (Eint "1");_}  -> 1
+  | {Py_ast.expr_desc=Eunop (Uneg, {Py_ast.expr_desc=Py_ast.Econst(Eint "1");_});_} -> -1
   | _ -> 0
 
 let add_var env id =
@@ -114,7 +114,8 @@ let rec has_stmt p = function
 and has_stmtl p bl = List.exists (has_stmt p) bl
 
 let rec expr_has_call id e = match e.Py_ast.expr_desc with
-  | Enone | Ebool _ | Eint _ | Estring _ | Py_ast.Eident _ -> false
+  | Py_ast.Econst _ -> false
+  | Py_ast.Eident _ -> false
   | Emake (e1, e2) | Eget (e1, e2) | Ebinop (_, e1, e2) ->
     expr_has_call id e1 || expr_has_call id e2
   | Eunop (_, e1) -> expr_has_call id e1
@@ -133,14 +134,17 @@ let rec stmt_has_call id s = match s.stmt_desc with
 and block_has_call id = has_stmtl (stmt_has_call id)
 
 let rec expr env {Py_ast.expr_loc = loc; Py_ast.expr_desc = d } = match d with
-  | Py_ast.Enone ->
-    mk_unit ~loc
-  | Py_ast.Ebool b ->
-    mk_expr ~loc (if b then Etrue else Efalse)
-  | Py_ast.Eint s ->
-    constant_s ~loc s
-  | Py_ast.Estring _s ->
-    mk_unit ~loc (*FIXME*)
+  | Py_ast.Econst e ->
+      begin match e with
+      | Py_ast.Enone ->
+        mk_unit ~loc
+      | Py_ast.Ebool b ->
+        mk_expr ~loc (if b then Etrue else Efalse)
+      | Py_ast.Eint s ->
+        constant_s ~loc s
+      | Py_ast.Estring _s ->
+      mk_unit ~loc (*FIXME*)
+      end
   | Py_ast.Eident id ->
     if not (Mstr.mem id.id_str env.vars) then
       Loc.errorm ~loc "unbound variable %s" id.id_str;
@@ -180,17 +184,21 @@ let rec expr env {Py_ast.expr_loc = loc; Py_ast.expr_desc = d } = match d with
 
   | Py_ast.Ecall ({id_str="slice"} as id, [e1;e2;e3]) ->
 
-    let zero = expr env ({Py_ast.expr_loc = loc; Py_ast.expr_desc = Eint "0"}) in
+    let zero = expr env ({Py_ast.expr_loc = loc; Py_ast.expr_desc = Py_ast.Econst (Eint "0")}) in
     let e1' = mk_id ~loc "e1'" in
     let e1_var = mk_var ~loc e1' in
 
     let len = mk_expr ~loc (Eidapp (Qident (mk_id ~loc "len"), [e1_var])) in
 
     let e2, e3 = match e2, e3 with
-      | {Py_ast.expr_desc=Py_ast.Enone}, {Py_ast.expr_desc=Py_ast.Enone} -> zero, len
-      | _                              , {Py_ast.expr_desc=Py_ast.Enone} -> expr env e2, len
-      | {Py_ast.expr_desc=Py_ast.Enone}, _                               -> zero, expr env e3
-      | _                              , _                               -> expr env e2, expr env e3
+      | {Py_ast.expr_desc=Py_ast.(Econst Enone) }, {Py_ast.expr_desc=Py_ast.(Econst Enone)} ->
+          zero, len
+      | _ , {Py_ast.expr_desc=Py_ast.(Econst Enone)} ->
+          expr env e2, len
+      | {Py_ast.expr_desc=Py_ast.(Econst Enone)}, _ ->
+          zero, expr env e3
+      | _, _ ->
+          expr env e2, expr env e3
     in
 
     let id = Qdot (Qident (mk_id ~loc "Python"), id) in
@@ -200,7 +208,7 @@ let rec expr env {Py_ast.expr_loc = loc; Py_ast.expr_desc = d } = match d with
     ))
 
   | Py_ast.Ecall ({id_str="range"} as id, els) when List.length els < 4 ->
-    let zero = {Py_ast.expr_loc = loc; Py_ast.expr_desc = Eint "0"} in
+    let zero = {Py_ast.expr_loc = loc; Py_ast.expr_desc = Py_ast.Econst (Eint "0")} in
     let from_to_step, id = match els with
                         | [e]        -> [zero; e], id
                         | [e1;e2]    -> [e1; e2], id
@@ -246,7 +254,7 @@ let mk_for_params exps loc env =
 
   match exps with
   | [e1] ->
-      let zero = {Py_ast.expr_loc = loc; Py_ast.expr_desc = Eint "0"} in
+      let zero = {Py_ast.expr_loc = loc; Py_ast.expr_desc = Py_ast.Econst (Eint "0")} in
       expr env zero, mk_minus1 e1, Expr.To
   | [e1;e2] ->
       expr env e1, mk_minus1 e2, Expr.To

@@ -167,22 +167,22 @@ expr:
 
 expr_desc:
 | NONE
-    { Enone }
+    { Econst Enone }
 | TRUE
-    { Ebool true }
+    { Econst (Ebool true) }
 | FALSE
-    { Ebool false }
+    { Econst (Ebool false) }
 | c = INTEGER
-    { Eint c }
+    { Econst (Eint c) }
 | s = STRING
-    { Estring s }
+    { Econst (Estring s) }
 | e1 = expr LEFTSQ e2 = expr RIGHTSQ
     { Eget (e1, e2) }
 
 | e1 = expr LEFTSQ e2=option(expr) COLON e3=option(expr) RIGHTSQ
     {
       let f = mk_id "slice" $startpos $endpos in
-      let none = mk_expr (floc $startpos $endpos) Enone in
+      let none = mk_expr (floc $startpos $endpos) (Econst Enone) in
       let e2, e3 = match e2, e3 with
         | None, None -> none, none
         | Some e, None -> e, none

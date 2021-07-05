@@ -22,16 +22,19 @@ type binop =
   | Beq | Bneq | Blt | Ble | Bgt | Bge  (* == != < <= > >= *)
   | Band | Bor                          (* && || *)
 
+type atom =
+  | Enone
+  | Ebool of bool
+  | Eint of string
+  | Estring of string
+
 type expr = {
   expr_desc: expr_desc;
   expr_loc : Loc.position;
 }
 
 and expr_desc =
-  | Enone
-  | Ebool of bool
-  | Eint of string
-  | Estring of string
+  | Econst of atom
   | Eident of ident
   | Ebinop of binop * expr * expr
   | Eunop of unop * expr

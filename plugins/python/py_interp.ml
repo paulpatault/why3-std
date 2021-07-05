@@ -66,6 +66,12 @@ type var = (string, value) Hashtbl.t
 type func = (string, string list * block) Hashtbl.t
 type env = { vars: var; funcs: func; }
 
+type state = {
+  stack: (expr -> stmt list) list;
+  expr: stmt list;
+  env: env list;
+}
+
 let mk_new_env () =
   { vars = Hashtbl.create 10; funcs = Hashtbl.create 10 }
 
@@ -332,10 +338,10 @@ module Primitives =
 
 let rec expr (env: env) (e: expr): value =
   match e.expr_desc with
-  | Enone     -> Vnone
-  | Ebool b   -> Vbool b
-  | Eint s    -> Vint (BigInt.of_string s)
-  | Estring s -> Vstring s
+  | Econst Enone     -> Vnone
+  | Econst (Ebool b)   -> Vbool b
+  | Econst (Eint s)    -> Vint (BigInt.of_string s)
+  | Econst (Estring s) -> Vstring s
   | Eident (x: Why3.Ptree.ident)  ->
       begin try
         Hashtbl.find env.vars x.id_str
@@ -512,6 +518,8 @@ let interpreter (path:string) (input: string -> string) (print: string -> unit):
   let file = Py_lexer.parse path c in
   let env = mk_new_env () in
   block env file
+
+let step (state: state): state = assert false
 
 let () =
   let input = fun s -> Printf.printf "%s" s; read_line () in

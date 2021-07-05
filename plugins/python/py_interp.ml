@@ -42,7 +42,7 @@ type env_state = {
 }
 
 type state = {
-  stack: (expr -> block) list;
+  mutable stack: (expr -> block) list;
   prog: block;
   env: env_state list;
 }
@@ -69,6 +69,7 @@ let const_to_string = function
   | Ebool b   -> if b then "True" else "False"
   | Eint s    -> s
   | Estring s -> s
+  | Evector _ -> "vec"
 
 let bool const =
   match const with
@@ -76,16 +77,24 @@ let bool const =
   | Ebool b   -> b
   | Eint i    -> let i = BigInt.of_string i in not (BigInt.eq i BigInt.zero)
   | Estring s -> s <> ""
+  | Evector v -> not (Vector.is_empty v)
 
 let rec py_compare v1 v2 ~loc =
   match v1, v2 with
   | Ebool b1,   Ebool b2   -> Bool.compare b1 b2
   | Eint n1,    Eint n2    -> BigInt.compare (BigInt.of_string n1) (BigInt.of_string n2)
   | Estring s1, Estring s2 -> String.compare s1 s2
+  | Evector v1, Evector v2 ->
+    let vtol v =
+      let rec aux acc = function
+        | -1 -> acc
+        | i -> aux (get_vec v i :: acc) (i-1)
+      in aux [] (Vector.length v - 1) in
+    List.compare (py_compare ~loc) (vtol v1) (vtol v2)
   | _ ->
-      Loc.errorm ~loc
-        "TypeError: comparison not supported between instances of '%s' and '%s'"
-        (const_to_string v1) (const_to_string v2)
+    Loc.errorm ~loc
+      "TypeError: comparison not supported between instances of '%s' and '%s'"
+      (const_to_string v1) (const_to_string v2)
 
 let binop_comp ~loc = function
   | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
@@ -136,57 +145,57 @@ let expr (state: state) match_value: state =
       begin match state.stack with
       | [] -> Printf.printf "%s\n" (const_to_string c); state
       | f::k ->
-          let app = f match_value in
-          mk_state state ~stack:k ~prog:(app@state.prog)
+        let app = f match_value in
+        mk_state state ~stack:k ~prog:(app@state.prog)
       end
 
   | Ebinop (b, e1, e2) ->
       begin match e1.expr_desc, e2.expr_desc with
       | Econst c1, Econst c2 ->
-          begin match c1, c2, b with
-          | Eint s1, Eint s2, (Badd | Bsub | Bmul | Bdiv | Bmod) ->
-            let b = binop_op b in
-            let n1 = BigInt.of_string s1 in
-            let n2 = BigInt.of_string s2 in
-            let r = b n1 n2 in
-            let expr = mk_expr (Econst (Eint (BigInt.to_string r))) ~loc in
-            let res = mk_Dstmt (Seval expr) ~loc in
-            mk_state state ~prog:(res::state.prog)
-          | c1, c2, (Beq | Bneq | Blt | Ble | Bgt | Bge) ->
-            let b = binop_comp ~loc b in
-            let r = b c1 c2 in
-            let expr = mk_expr (Econst (Ebool r)) ~loc in
-            let res = mk_Dstmt (Seval expr) ~loc in
-            mk_state state ~prog:(res::state.prog)
-          | c1, c2, (Band | Bor) ->
-            let b = binop_logic b in
-            let b1 = bool c1 in
-            let b2 = bool c2 in
-            let r = b b1 b2 in
-            let expr = mk_expr (Econst (Ebool r)) ~loc in
-            let res = mk_Dstmt (Seval expr) ~loc in
-            mk_state state ~prog:(res::state.prog)
-          | _ -> assert false
-          end
+        begin match c1, c2, b with
+        | Eint s1, Eint s2, (Badd | Bsub | Bmul | Bdiv | Bmod) ->
+          let b = binop_op b in
+          let n1 = BigInt.of_string s1 in
+          let n2 = BigInt.of_string s2 in
+          let r = b n1 n2 in
+          let expr = mk_expr (Econst (Eint (BigInt.to_string r))) ~loc in
+          let res = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog:(res::state.prog)
+        | c1, c2, (Beq | Bneq | Blt | Ble | Bgt | Bge) ->
+          let b = binop_comp ~loc b in
+          let r = b c1 c2 in
+          let expr = mk_expr (Econst (Ebool r)) ~loc in
+          let res = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog:(res::state.prog)
+        | c1, c2, (Band | Bor) ->
+          let b = binop_logic b in
+          let b1 = bool c1 in
+          let b2 = bool c2 in
+          let r = b b1 b2 in
+          let expr = mk_expr (Econst (Ebool r)) ~loc in
+          let res = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog:(res::state.prog)
+        | _ -> assert false
+        end
       | Econst e1', _e2 ->
         begin match e1', b with
-          | Ebool true, Bor | Ebool false, Band ->
-            let e1 = mk_Dstmt (Seval e1) ~loc in
-            mk_state state ~prog:(e1::state.prog)
-          | _ ->
-            let f e2 =
-              let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
-              [mk_Dstmt (Seval expr) ~loc]
-            in
-            let e = mk_Dstmt (Seval e2) e2.expr_loc in
-            mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+        | Ebool true, Bor | Ebool false, Band ->
+          let e1 = mk_Dstmt (Seval e1) ~loc in
+          mk_state state ~prog:(e1::state.prog)
+        | _ ->
+          let f e2 =
+            let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
+            [mk_Dstmt (Seval expr) ~loc]
+          in
+          let e = mk_Dstmt (Seval e2) ~loc:e2.expr_loc in
+          mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
         end
       | _e1, _e2 ->
         let f e1 =
           let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
           [mk_Dstmt (Seval expr) ~loc]
         in
-        let e = mk_Dstmt (Seval e1) e1.expr_loc in
+        let e = mk_Dstmt (Seval e1) ~loc:e1.expr_loc in
         mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
       end
 
@@ -219,6 +228,22 @@ let expr (state: state) match_value: state =
       with Not_found ->
         Loc.errorm ~loc "NameError: name '%s' is not defined" x.id_str
       end
+  | Ecall (f, el) ->
+    let rec eval_list r el state = match el with
+      | []      -> state
+      | e :: [] ->
+        let expr = mk_expr (Econst Enone) ~loc in
+        let none = mk_Dstmt (Seval expr) ~loc in
+        (fun v -> r := v :: !r; [none]) :: state
+      | e :: el -> eval_list r el ((fun v -> r := v :: !r; []) :: state)
+    in
+    let r = ref [] in
+    state.stack <- eval_list r [] state.stack;
+    assert false
+    (* let r = ref [] in
+    let e::el = el in
+    st := (fun v -> r:=v::!r; [Enone])::st;
+    eval_list r el ((fun _ -> ... calculer l'appel à partir de !r ...) :: state) *)
   | _ -> assert false
 
 let stmt (state: state) match_value: state =
@@ -230,13 +255,13 @@ let stmt (state: state) match_value: state =
   | Sif (e, b1, b2) ->
       begin match e.expr_desc with
       | Econst c ->
-          let b = if bool c then b1 else b2 in
-          mk_state state ~prog:(b@state.prog)
+        let b = if bool c then b1 else b2 in
+        mk_state state ~prog:(b@state.prog)
       | e ->
-          let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
-          let e = mk_expr e ~loc in
-          let stmt = mk_Dstmt (Seval e) ~loc in
-          mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
+        let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
+        let e = mk_expr e ~loc in
+        let stmt = mk_Dstmt (Seval e) ~loc in
+        mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
       end
   | Sassign (id, e) ->
       let f e =
@@ -264,8 +289,4 @@ let little_steps path =
   done
 
 
-let () =
-  (* let input = fun s -> Printf.printf "%s" s; read_line () in
-  let print = fun s -> Printf.printf "%s" s in *)
-  (* interpreter Sys.argv.(1) input print *)
-  little_steps Sys.argv.(1)
+let () = little_steps Sys.argv.(1)

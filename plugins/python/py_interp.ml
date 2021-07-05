@@ -94,7 +94,7 @@ let py_div_mod n1 n2 =
 let py_div n1 n2 = fst (py_div_mod n1 n2)
 let py_mod n1 n2 = snd (py_div_mod n1 n2)
 
-let rec py_compare v1 v2 ~loc =
+let rec py_compare' v1 v2 ~loc =
   match v1, v2 with
   | Vbool b1,   Vbool b2   -> Bool.compare b1 b2
   | Vint n1,    Vint n2    -> BigInt.compare n1 n2
@@ -105,7 +105,7 @@ let rec py_compare v1 v2 ~loc =
             | -1 -> acc
             | i -> aux (get_vec v i :: acc) (i-1)
           in aux [] (Vector.length v - 1) in
-        List.compare (py_compare ~loc) (vtol l1) (vtol l2)
+        List.compare (py_compare' ~loc) (vtol l1) (vtol l2)
   | _ ->
       Loc.errorm ~loc
         "TypeError: comparison not supported between instances of '%a' and '%a'"
@@ -119,13 +119,13 @@ let binop_op = function
   | Bmod -> py_mod
   | _    -> assert false
 
-let binop_comp ~loc = function
-  | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
-  | Bneq -> fun e1 e2 -> py_compare ~loc e1 e2 <> 0
-  | Blt  -> fun e1 e2 -> py_compare ~loc e1 e2 <  0
-  | Ble  -> fun e1 e2 -> py_compare ~loc e1 e2 <= 0
-  | Bgt  -> fun e1 e2 -> py_compare ~loc e1 e2 >  0
-  | Bge  -> fun e1 e2 -> py_compare ~loc e1 e2 >= 0
+let binop_comp' ~loc = function
+  | Beq  -> fun e1 e2 -> py_compare' ~loc e1 e2 =  0
+  | Bneq -> fun e1 e2 -> py_compare' ~loc e1 e2 <> 0
+  | Blt  -> fun e1 e2 -> py_compare' ~loc e1 e2 <  0
+  | Ble  -> fun e1 e2 -> py_compare' ~loc e1 e2 <= 0
+  | Bgt  -> fun e1 e2 -> py_compare' ~loc e1 e2 >  0
+  | Bge  -> fun e1 e2 -> py_compare' ~loc e1 e2 >= 0
   | _    -> assert false
 
 let binop_logic = function
@@ -283,7 +283,7 @@ module Primitives =
 
     let sort ~loc = function
       | [Vlist l] ->
-          Vector.sort (py_compare ~loc) l;
+          Vector.sort (py_compare' ~loc) l;
           Vnone
       | Vlist _v::l ->
           Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
@@ -358,7 +358,7 @@ let rec expr' (env: env) (e: expr): value =
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
       let e1 = expr' env e1 in
       let e2 = expr' env e2 in
-      let b = binop_comp b in
+      let b = binop_comp' b in
       Vbool (b ~loc:e.expr_loc e1 e2)
   | Ebinop (Band | Bor as b, e1, e2) ->
       let b  = binop_logic b in
@@ -526,11 +526,11 @@ let mk_state ?stack ?prog ?env state =
   let env = match env with None -> state.env | Some env -> env in
   {stack; prog; env}
 
-let mk_stmt stmt_desc stmt_loc =
-  {stmt_desc; stmt_loc}
+let mk_stmt stmt_desc ~loc =
+  {stmt_desc; stmt_loc=loc}
 
-let mk_expr expr_desc expr_loc =
-  {expr_desc; expr_loc}
+let mk_expr expr_desc ~loc =
+  {expr_desc; expr_loc=loc}
 
 let const = function
   | Enone     -> Vnone
@@ -551,7 +551,27 @@ let bool const =
   | Eint i    -> let i = BigInt.of_string i in not (BigInt.eq i BigInt.zero)
   | Estring s -> s <> ""
 
+let rec py_compare v1 v2 ~loc =
+  match v1, v2 with
+  | Ebool b1,   Ebool b2   -> Bool.compare b1 b2
+  | Eint n1,    Eint n2    -> BigInt.compare (BigInt.of_string n1) (BigInt.of_string n2)
+  | Estring s1, Estring s2 -> String.compare s1 s2
+  | _ ->
+      Loc.errorm ~loc
+        "TypeError: comparison not supported between instances of '%s' and '%s'"
+        (const_to_string v1) (const_to_string v2)
+
+let binop_comp ~loc = function
+  | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
+  | Bneq -> fun e1 e2 -> py_compare ~loc e1 e2 <> 0
+  | Blt  -> fun e1 e2 -> py_compare ~loc e1 e2 <  0
+  | Ble  -> fun e1 e2 -> py_compare ~loc e1 e2 <= 0
+  | Bgt  -> fun e1 e2 -> py_compare ~loc e1 e2 >  0
+  | Bge  -> fun e1 e2 -> py_compare ~loc e1 e2 >= 0
+  | _    -> assert false
+
 let expr (state: state) match_value: state =
+  let loc = match_value.expr_loc in
   match match_value.expr_desc with
   | Econst c ->
       begin match state.stack with
@@ -560,6 +580,7 @@ let expr (state: state) match_value: state =
           let app = f match_value in
           mk_state state ~stack:k ~prog:(app@state.prog)
       end
+
   | Ebinop (b, e1, e2) ->
       begin match e1.expr_desc, e2.expr_desc with
       | Econst c1, Econst c2 ->
@@ -569,43 +590,68 @@ let expr (state: state) match_value: state =
             let n1 = BigInt.of_string s1 in
             let n2 = BigInt.of_string s2 in
             let r = b n1 n2 in
-            let expr = mk_expr (Econst (Eint (BigInt.to_string r))) match_value.expr_loc in
-            let res = mk_stmt (Seval expr) match_value.expr_loc in
+            let expr = mk_expr (Econst (Eint (BigInt.to_string r))) ~loc in
+            let res = mk_stmt (Seval expr) ~loc in
+            mk_state state ~prog:(res::state.prog)
+          | c1, c2, (Beq | Bneq | Blt | Ble | Bgt | Bge) ->
+            let b = binop_comp ~loc b in
+            let r = b c1 c2 in
+            let expr = mk_expr (Econst (Ebool r)) ~loc in
+            let res = mk_stmt (Seval expr) ~loc in
             mk_state state ~prog:(res::state.prog)
           | c1, c2, (Band | Bor) ->
-            (* paresseux *)
             let b = binop_logic b in
             let b1 = bool c1 in
             let b2 = bool c2 in
             let r = b b1 b2 in
-            let expr = mk_expr (Econst (Ebool r)) match_value.expr_loc in
-            let res = mk_stmt (Seval expr) match_value.expr_loc in
+            let expr = mk_expr (Econst (Ebool r)) ~loc in
+            let res = mk_stmt (Seval expr) ~loc in
             mk_state state ~prog:(res::state.prog)
           | _ -> assert false
           end
       | Econst e1', _e2 ->
         begin match e1', b with
           | Ebool true, Bor | Ebool false, Band ->
-            let e1 = mk_stmt (Seval e1) match_value.expr_loc in 
+            let e1 = mk_stmt (Seval e1) ~loc in 
             mk_state state ~prog:(e1::state.prog)
           | _ -> 
             let f e2 =
-              let expr = mk_expr (Ebinop (b, e1, e2)) match_value.expr_loc in
-              [mk_stmt (Seval expr) match_value.expr_loc]
+              let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
+              [mk_stmt (Seval expr) ~loc]
             in
             let e = mk_stmt (Seval e2) e2.expr_loc in
             mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
         end
-
       | _e1, _e2 ->
         let f e1 =
-          let expr = mk_expr (Ebinop (b, e1, e2)) match_value.expr_loc in
-          [mk_stmt (Seval expr) match_value.expr_loc]
+          let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
+          [mk_stmt (Seval expr) ~loc]
         in
-        let e1 = mk_stmt (Seval e1) e1.expr_loc in
-        mk_state state ~stack:(f::state.stack) ~prog:(e1::state.prog)
+        let e = mk_stmt (Seval e1) e1.expr_loc in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
       end
-    
+  
+  | Eunop (u, e) ->
+    begin match u, e.expr_desc with
+      | Uneg, Econst (Eint n)  ->
+        let n = BigInt.of_string n in
+        let expr = mk_expr (Econst (Eint (BigInt.minus n |> BigInt.to_string))) ~loc in
+        let stmt = mk_stmt (Seval expr) ~loc in
+        mk_state state ~prog:(stmt::state.prog)
+      | Unot, Econst c ->
+        let b = bool c in
+        let expr = mk_expr (Econst (Ebool (not b))) ~loc in
+        let stmt = mk_stmt (Seval expr) ~loc in
+        mk_state state ~prog:(stmt::state.prog)
+      | (Uneg | Unot), _e ->
+        let f e =
+          let expr = mk_expr (Eunop (u, e)) ~loc in
+          [mk_stmt (Seval expr) ~loc]
+        in
+        let e = mk_stmt (Seval e) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    end
+
   | _ -> assert false
 
 let stmt (state: state) match_value: state =

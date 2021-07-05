@@ -520,20 +520,33 @@ let interpreter (path:string) (input: string -> string) (print: string -> unit):
   block env file
 
 
+let mk_state ?stack ?prog ?env state =
+  let stack = match stack with None -> state.stack | Some stack -> stack in
+  let prog = match prog with None -> state.prog | Some prog -> prog in
+  let env = match env with None -> state.env | Some env -> env in
+  {stack; prog; env}
+
 let const = function
   | Enone     -> Vnone
   | Ebool b   -> Vbool b
   | Eint s    -> Vint (BigInt.of_string s)
   | Estring s -> Vstring s
 
+let const_to_string = function
+  | Enone     -> "None"
+  | Ebool b   -> if b then "True" else "False"
+  | Eint s    -> s
+  | Estring s -> s
+
+
 let expr (state: state) match_value: state =
   match match_value.expr_desc with
   | Econst c ->
       begin match state.stack with
-      | [] -> state
+      | [] -> Printf.printf "%s\n" (const_to_string c); state
       | e::k ->
-          let app = e match_value in
-          {stack=k; prog=app@state.prog; env=state.env}
+          let app = e match_value in 
+          mk_state state ~stack:k ~prog:(app@state.prog)
       end
   | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
       begin match e1.expr_desc, e2.expr_desc with
@@ -546,11 +559,34 @@ let expr (state: state) match_value: state =
               let r = b n1 n2 in
               let expr = {expr_desc=Econst (Eint (BigInt.to_string r)); expr_loc=match_value.expr_loc} in
               let res = {stmt_desc=Seval expr; stmt_loc=match_value.expr_loc} in
-              {stack=state.stack; prog=res::state.prog; env=state.env}
+              mk_state state ~prog:(res::state.prog)
           | _ -> assert false
           end
-      | Econst c1, e2 -> assert false
-      | e1, e2 -> assert false
+      | Econst (Eint i1), _e2 ->
+        let f e2 =
+          match e2.expr_desc with
+            | Econst (Eint i) ->
+              let b = binop_op b in
+              let n1 = BigInt.of_string i in
+              let n2 = BigInt.of_string i1 in
+              let r = b n1 n2 in
+              let expr = {expr_desc=Econst (Eint (BigInt.to_string r)); expr_loc=match_value.expr_loc} in
+              [{stmt_desc=Seval expr; stmt_loc=match_value.expr_loc}]
+            | _ -> assert false
+        in
+        let e = {stmt_desc=Seval e2; stmt_loc=e2.expr_loc} in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      | _e1, _e2 -> 
+        let f e1 =
+          begin match e1.expr_desc with
+          | Econst (Eint _s1) ->
+            let expr = {expr_desc=Ebinop (b, e1, e2); expr_loc=match_value.expr_loc} in
+            [{stmt_desc=Seval expr; stmt_loc=match_value.expr_loc}]
+          | _ -> assert false
+          end
+        in
+        let e1 = {stmt_desc=Seval e1; stmt_loc=e1.expr_loc} in
+        mk_state state ~stack:(f::state.stack) ~prog:(e1::state.prog)
       end
   | _ -> assert false
 
@@ -566,7 +602,22 @@ let step (state: state): state =
       let state = {stack=state.stack; prog=k; env=state.env} in
       stmt state s
 
+let little_steps path =
+  let c = open_in path in
+  let file = Py_lexer.parse path c in
+  let env = mk_new_env () in
+  let rec prog file acc = match file with
+    | Dstmt l::s -> prog s (l::acc)
+    | _ -> List.rev acc
+  in
+  let state = ref {stack=[]; prog=prog file []; env=[mk_new_env ()]} in
+  while !state.stack <> [] || !state.prog <> [] do
+    state := step !state;
+  done
+    
+
 let () =
   let input = fun s -> Printf.printf "%s" s; read_line () in
   let print = fun s -> Printf.printf "%s" s in
-  interpreter Sys.argv.(1) input print
+  (* interpreter Sys.argv.(1) input print *)
+  little_steps Sys.argv.(1)

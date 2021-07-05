@@ -68,7 +68,7 @@ type env = { vars: var; funcs: func; }
 
 type state = {
   stack: (expr -> stmt list) list;
-  expr: stmt list;
+  prog: stmt list;
   env: env list;
 }
 
@@ -336,7 +336,7 @@ module Primitives =
 
   end
 
-let rec expr (env: env) (e: expr): value =
+let rec expr' (env: env) (e: expr): value =
   match e.expr_desc with
   | Econst Enone     -> Vnone
   | Econst (Ebool b)   -> Vbool b
@@ -349,15 +349,15 @@ let rec expr (env: env) (e: expr): value =
         Loc.errorm ~loc:e.expr_loc "NameError: name '%s' is not defined" x.id_str
       end
   | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
-      begin match expr env e1, expr env e2 with
+      begin match expr' env e1, expr' env e2 with
       | Vint n1, Vint n2 -> let b = binop_op b in Vint (b n1 n2)
       | v1, v2 -> Loc.errorm ~loc:e.expr_loc
           "TypeError: unsupported operand type(s) for %a: '%a' and '%a'"
           binop_to_string b type_to_string v1 type_to_string v2
       end
   | Ebinop (Beq | Bneq | Blt | Ble | Bgt | Bge as b, e1, e2) ->
-      let e1 = expr env e1 in
-      let e2 = expr env e2 in
+      let e1 = expr' env e1 in
+      let e2 = expr' env e2 in
       let b = binop_comp b in
       Vbool (b ~loc:e.expr_loc e1 e2)
   | Ebinop (Band | Bor as b, e1, e2) ->
@@ -366,7 +366,7 @@ let rec expr (env: env) (e: expr): value =
       let v2 = bool env e2 in
       Vbool (b v1 v2)
   | Eunop (u, e) ->
-      let v = expr env e in
+      let v = expr' env e in
       begin match u, v with
       | Uneg, Vint n  -> Vint (BigInt.minus n)
       | Unot, Vbool b -> Vbool (not b)
@@ -376,13 +376,13 @@ let rec expr (env: env) (e: expr): value =
   | Ecall (id, params) ->
       begin try
         let f = Hashtbl.find Primitives.std_func_table id.id_str in
-        f (List.map (fun e -> expr env e) params) ~loc:e.expr_loc
+        f (List.map (fun e -> expr' env e) params) ~loc:e.expr_loc
       with Not_found ->
         begin try
           let id_params, b = Hashtbl.find env.funcs id.id_str in
           let envf = {vars = Hashtbl.create 10; funcs = env.funcs} in
           begin try
-            List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr env e)) id_params params;
+            List.iter2 (fun id e -> Hashtbl.add envf.vars id (expr' env e)) id_params params;
             begin try block envf b; Vnone
             with Return v -> v end
           with Invalid_argument _ ->
@@ -397,7 +397,7 @@ let rec expr (env: env) (e: expr): value =
   | Edot (e, id, params) ->
       begin try
         let f = Hashtbl.find Primitives.list_func_table id.id_str in
-        let params = List.map (expr env) (e::params) in
+        let params = List.map (expr' env) (e::params) in
         f params ~loc:e.expr_loc
       with Not_found ->
           Loc.errorm ~loc:e.expr_loc
@@ -405,11 +405,11 @@ let rec expr (env: env) (e: expr): value =
       end
   | Elist l ->
       let v = Vector.create ~dummy:Vnone ~capacity:0 in
-      List.iter (fun e -> Vector.push v (expr env e)) l;
+      List.iter (fun e -> Vector.push v (expr' env e)) l;
       Vlist v
   | Emake (e1, e2) ->
-      let e1 = expr env e1 in
-      let e2 = expr env e2 in
+      let e1 = expr' env e1 in
+      let e2 = expr' env e2 in
       let n = match e2 with
         | Vint n -> BigInt.to_int n
         | _e -> Loc.errorm ~loc:e.expr_loc
@@ -417,7 +417,7 @@ let rec expr (env: env) (e: expr): value =
       in
       Vlist (Vector.make ~dummy:Vnone n e1)
   | Eget (e1, e2) ->
-      begin match expr env e1, expr env e2 with
+      begin match expr' env e1, expr' env e2 with
         | Vlist v, Vint i ->
           begin try
             let idx = transform_idx v i |> BigInt.to_int in
@@ -442,10 +442,10 @@ and stmt (env: env) (s: stmt): unit =
       if bool env e then block env b1
       else block env b2
   | Sreturn e ->
-      let e = expr env e in
+      let e = expr' env e in
       raise (Return e)
   | Sassign (id, e) ->
-      let e = expr env e in
+      let e = expr' env e in
       Hashtbl.remove env.vars id.id_str;
       Hashtbl.add env.vars id.id_str e
   | Swhile (e, _, _, b) ->
@@ -456,7 +456,7 @@ and stmt (env: env) (s: stmt): unit =
         done;
       with Break -> () end
   | Sfor (id, e, _, b) ->
-      begin match expr env e with
+      begin match expr' env e with
       | Vlist l ->
           begin try
             Vector.iter (fun li ->
@@ -469,11 +469,11 @@ and stmt (env: env) (s: stmt): unit =
           "TypeError: '%a' object is not iterable"
           type_to_string non_list
       end;
-  | Seval e -> let _ = expr env e in ()
+  | Seval e -> let _ = expr' env e in ()
   | Sset (e1, e2, e3) ->
-    let e1 = expr env e1 in
-    let e2 = expr env e2 in
-    let e3 = expr env e3 in
+    let e1 = expr' env e1 in
+    let e2 = expr' env e2 in
+    let e3 = expr' env e3 in
     begin match e1, e2, e3 with
     | Vlist v, Vint i, e ->
         begin try
@@ -504,7 +504,7 @@ and block (env: env) (b: block): unit =
   | _::k -> block env k
 
 and bool (env: env) (e: expr): bool =
-  match expr env e with
+  match expr' env e with
   | Vnone     -> false
   | Vbool b   -> b
   | Vint i    -> not (BigInt.eq i BigInt.zero)
@@ -519,7 +519,52 @@ let interpreter (path:string) (input: string -> string) (print: string -> unit):
   let env = mk_new_env () in
   block env file
 
-let step (state: state): state = assert false
+
+let const = function
+  | Enone     -> Vnone
+  | Ebool b   -> Vbool b
+  | Eint s    -> Vint (BigInt.of_string s)
+  | Estring s -> Vstring s
+
+let expr (state: state) match_value: state =
+  match match_value.expr_desc with
+  | Econst c ->
+      begin match state.stack with
+      | [] -> state
+      | e::k ->
+          let app = e match_value in
+          {stack=k; prog=app@state.prog; env=state.env}
+      end
+  | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
+      begin match e1.expr_desc, e2.expr_desc with
+      | Econst c1, Econst c2 ->
+          begin match c1, c2 with
+          | Eint s1, Eint s2 ->
+              let b = binop_op b in
+              let n1 = BigInt.of_string s1 in
+              let n2 = BigInt.of_string s2 in
+              let r = b n1 n2 in
+              let expr = {expr_desc=Econst (Eint (BigInt.to_string r)); expr_loc=match_value.expr_loc} in
+              let res = {stmt_desc=Seval expr; stmt_loc=match_value.expr_loc} in
+              {stack=state.stack; prog=res::state.prog; env=state.env}
+          | _ -> assert false
+          end
+      | Econst c1, e2 -> assert false
+      | e1, e2 -> assert false
+      end
+  | _ -> assert false
+
+let stmt (state: state) match_value: state =
+  match match_value.stmt_desc with
+  | Seval x -> expr state x
+  | _ -> assert false
+
+let step (state: state): state =
+  match state.prog with
+  | [] -> assert false
+  | s::k ->
+      let state = {stack=state.stack; prog=k; env=state.env} in
+      stmt state s
 
 let () =
   let input = fun s -> Printf.printf "%s" s; read_line () in

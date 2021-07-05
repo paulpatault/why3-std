@@ -526,6 +526,12 @@ let mk_state ?stack ?prog ?env state =
   let env = match env with None -> state.env | Some env -> env in
   {stack; prog; env}
 
+let mk_stmt stmt_desc stmt_loc =
+  {stmt_desc; stmt_loc}
+
+let mk_expr expr_desc expr_loc =
+  {expr_desc; expr_loc}
+
 let const = function
   | Enone     -> Vnone
   | Ebool b   -> Vbool b
@@ -538,56 +544,68 @@ let const_to_string = function
   | Eint s    -> s
   | Estring s -> s
 
+let bool const =
+  match const with
+  | Enone     -> false
+  | Ebool b   -> b
+  | Eint i    -> let i = BigInt.of_string i in not (BigInt.eq i BigInt.zero)
+  | Estring s -> s <> ""
 
 let expr (state: state) match_value: state =
   match match_value.expr_desc with
   | Econst c ->
       begin match state.stack with
       | [] -> Printf.printf "%s\n" (const_to_string c); state
-      | e::k ->
-          let app = e match_value in 
+      | f::k ->
+          let app = f match_value in
           mk_state state ~stack:k ~prog:(app@state.prog)
       end
-  | Ebinop (Badd | Bsub | Bmul | Bdiv | Bmod as b, e1, e2) ->
+  | Ebinop (b, e1, e2) ->
       begin match e1.expr_desc, e2.expr_desc with
       | Econst c1, Econst c2 ->
-          begin match c1, c2 with
-          | Eint s1, Eint s2 ->
-              let b = binop_op b in
-              let n1 = BigInt.of_string s1 in
-              let n2 = BigInt.of_string s2 in
-              let r = b n1 n2 in
-              let expr = {expr_desc=Econst (Eint (BigInt.to_string r)); expr_loc=match_value.expr_loc} in
-              let res = {stmt_desc=Seval expr; stmt_loc=match_value.expr_loc} in
-              mk_state state ~prog:(res::state.prog)
+          begin match c1, c2, b with
+          | Eint s1, Eint s2, (Badd | Bsub | Bmul | Bdiv | Bmod) ->
+            let b = binop_op b in
+            let n1 = BigInt.of_string s1 in
+            let n2 = BigInt.of_string s2 in
+            let r = b n1 n2 in
+            let expr = mk_expr (Econst (Eint (BigInt.to_string r))) match_value.expr_loc in
+            let res = mk_stmt (Seval expr) match_value.expr_loc in
+            mk_state state ~prog:(res::state.prog)
+          | c1, c2, (Band | Bor) ->
+            (* paresseux *)
+            let b = binop_logic b in
+            let b1 = bool c1 in
+            let b2 = bool c2 in
+            let r = b b1 b2 in
+            let expr = mk_expr (Econst (Ebool r)) match_value.expr_loc in
+            let res = mk_stmt (Seval expr) match_value.expr_loc in
+            mk_state state ~prog:(res::state.prog)
           | _ -> assert false
           end
-      | Econst (Eint i1), _e2 ->
-        let f e2 =
-          match e2.expr_desc with
-            | Econst (Eint i) ->
-              let b = binop_op b in
-              let n1 = BigInt.of_string i in
-              let n2 = BigInt.of_string i1 in
-              let r = b n1 n2 in
-              let expr = {expr_desc=Econst (Eint (BigInt.to_string r)); expr_loc=match_value.expr_loc} in
-              [{stmt_desc=Seval expr; stmt_loc=match_value.expr_loc}]
-            | _ -> assert false
-        in
-        let e = {stmt_desc=Seval e2; stmt_loc=e2.expr_loc} in
-        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
-      | _e1, _e2 -> 
+      | Econst e1', _e2 ->
+        begin match e1', b with
+          | Ebool true, Bor | Ebool false, Band ->
+            let e1 = mk_stmt (Seval e1) match_value.expr_loc in 
+            mk_state state ~prog:(e1::state.prog)
+          | _ -> 
+            let f e2 =
+              let expr = mk_expr (Ebinop (b, e1, e2)) match_value.expr_loc in
+              [mk_stmt (Seval expr) match_value.expr_loc]
+            in
+            let e = mk_stmt (Seval e2) e2.expr_loc in
+            mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+        end
+
+      | _e1, _e2 ->
         let f e1 =
-          begin match e1.expr_desc with
-          | Econst (Eint _s1) ->
-            let expr = {expr_desc=Ebinop (b, e1, e2); expr_loc=match_value.expr_loc} in
-            [{stmt_desc=Seval expr; stmt_loc=match_value.expr_loc}]
-          | _ -> assert false
-          end
+          let expr = mk_expr (Ebinop (b, e1, e2)) match_value.expr_loc in
+          [mk_stmt (Seval expr) match_value.expr_loc]
         in
-        let e1 = {stmt_desc=Seval e1; stmt_loc=e1.expr_loc} in
+        let e1 = mk_stmt (Seval e1) e1.expr_loc in
         mk_state state ~stack:(f::state.stack) ~prog:(e1::state.prog)
       end
+    
   | _ -> assert false
 
 let stmt (state: state) match_value: state =

@@ -244,6 +244,7 @@ let expr (state: state) match_value: state =
     let e::el = el in
     st := (fun v -> r:=v::!r; [Enone])::st;
     eval_list r el ((fun _ -> ... calculer l'appel à partir de !r ...) :: state) *)
+
   | _ -> assert false
 
 let stmt (state: state) match_value: state =
@@ -251,26 +252,36 @@ let stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
   match match_value.stmt_desc with
   | Seval x ->
-      expr state x
+    expr state x
   | Sif (e, b1, b2) ->
-      begin match e.expr_desc with
-      | Econst c ->
-        let b = if bool c then b1 else b2 in
-        mk_state state ~prog:(b@state.prog)
-      | e ->
-        let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
-        let e = mk_expr e ~loc in
-        let stmt = mk_Dstmt (Seval e) ~loc in
-        mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
-      end
+    begin match e.expr_desc with
+    | Econst c ->
+      let b = if bool c then b1 else b2 in
+      mk_state state ~prog:(b@state.prog)
+    | e ->
+      let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
+      let e = mk_expr e ~loc in
+      let stmt = mk_Dstmt (Seval e) ~loc in
+      mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
+    end
   | Sassign (id, e) ->
-      let f e =
-        let env = get_current_env state in
-        Hashtbl.replace env.vars id.id_str e;
-        []
-      in
-      let e = mk_Dstmt (Seval e) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    let f e =
+      let env = get_current_env state in
+      Hashtbl.replace env.vars id.id_str e;
+      []
+    in
+    let e = mk_Dstmt (Seval e) ~loc in
+    mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+  | Swhile (cond, _inv, _var, b) ->
+    begin match cond.expr_desc with
+    | Econst c ->
+      if bool c then mk_state state ~prog:(b@state.prog)
+      else state
+    | _ ->
+      let f e = [mk_Dstmt (Sif(e, b@[Dstmt match_value], [])) ~loc] in
+      let stmt = mk_Dstmt (Seval cond) ~loc in
+      mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
+    end
   | _ -> assert false
 
 let step (state: state): state =

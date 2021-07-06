@@ -144,6 +144,13 @@ let get_current_env state =
   | [] -> assert false
   | env::_ -> env
 
+let get_hd_tl_vec vec ~loc =
+  if Vector.is_empty vec then assert false
+  else
+    let hd = get_vec vec 0 in
+    let tl = Vector.sub vec 1 (Vector.length vec - 1) in
+    mk_expr (Econst hd) ~loc, mk_expr (Econst (Evector tl)) ~loc
+
 let expr (state: state) match_value: state =
   let loc = match_value.expr_loc in
   match match_value.expr_desc with
@@ -373,6 +380,24 @@ let stmt (state: state) match_value: state =
     let e = mk_Dstmt (Seval e) ~loc in
     mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
 
+  | Sfor (id, e, _inv, b) ->
+      begin match e.expr_desc with
+      | Econst (Evector v) ->
+          if Vector.is_empty v then state
+          else
+            let hd, tl = get_hd_tl_vec v e.expr_loc in
+            let env = (get_current_env state).vars in
+            Hashtbl.replace env id.id_str hd;
+            let stmt = mk_Dstmt (Sfor(id, tl, _inv, b)) ~loc in
+            let prog = b@stmt::state.prog in
+            mk_state state ~prog
+      | Econst _ -> assert false
+      | _v ->
+        let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
+        let e = mk_Dstmt (Seval e) ~loc in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+        end
+
   | Swhile (cond, _inv, _var, b) ->
     begin match cond.expr_desc with
     | Econst c ->
@@ -410,7 +435,6 @@ let stmt (state: state) match_value: state =
       mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
     end
 
-  | Sfor (id, e, _, b) -> assert false
   | Sreturn x -> assert false
   | Sbreak -> assert false
   | Scontinue -> assert false

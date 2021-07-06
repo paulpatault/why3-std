@@ -36,7 +36,7 @@ let unop_to_string fmt = function
 
 type func = (string, string list * block) Hashtbl.t
 
-type env_state = {
+type env = {
   vars: (string, expr) Hashtbl.t;
   funcs: func;
 }
@@ -44,7 +44,7 @@ type env_state = {
 type state = {
   mutable stack: (expr -> block) list;
   prog: block;
-  env: env_state list;
+  env: env list;
 }
 
 let mk_new_env () =

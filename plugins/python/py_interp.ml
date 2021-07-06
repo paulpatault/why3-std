@@ -149,6 +149,35 @@ let expr (state: state) match_value: state =
         mk_state state ~stack:k ~prog:(app@state.prog)
       end
 
+  | Elist l ->
+    let rec eval_list r el stack =
+      let f ret v = 
+        match v.expr_desc with
+          | Econst c ->
+            Vector.push !r c; ret
+          | _ -> assert false
+      in
+
+      match el with
+        | []      -> stack
+        | _e :: [] ->
+          let expr = mk_expr (Econst Enone) ~loc in
+          let none = mk_Dstmt (Seval expr) ~loc in
+          f [none] :: stack
+        | _e :: el -> eval_list r el (f [] :: stack)
+    in
+
+    let r = ref (Vector.create ~capacity:0 ~dummy:Enone) in
+    let stack = eval_list r l [] in
+
+    let f _ =
+      let expr = mk_expr  (Econst (Evector !r)) ~loc in
+      [mk_Dstmt (Seval expr) ~loc]
+    in
+
+    let l = List.map (fun e -> mk_Dstmt (Seval e) ~loc:e.expr_loc) l in
+    mk_state state ~stack:(stack@f::state.stack) ~prog:(l@state.prog)
+
   | Ebinop (b, e1, e2) ->
       begin match e1.expr_desc, e2.expr_desc with
       | Econst c1, Econst c2 ->

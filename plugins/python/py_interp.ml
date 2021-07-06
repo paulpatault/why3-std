@@ -276,7 +276,7 @@ let expr (state: state) match_value: state =
             mk_state state ~prog:(stmt::state.prog)
           | _ -> assert false
         end
-      | Econst c, _e2 -> 
+      | Econst _c, _e2 -> 
         let f e2 =
           let expr = mk_expr (Emake (e1, e2)) ~loc in
           [mk_Dstmt (Seval expr) ~loc]
@@ -307,7 +307,7 @@ let expr (state: state) match_value: state =
             with Invalid_argument _s -> assert false end
           | _ -> assert false
         end
-      | Econst c, _e2 -> 
+      | Econst _c, _e2 -> 
         let f e2 =
           let expr = mk_expr (Eget (e1, e2)) ~loc in
           [mk_Dstmt (Seval expr) ~loc]
@@ -349,6 +349,7 @@ let stmt (state: state) match_value: state =
   match match_value.stmt_desc with
   | Seval x ->
     expr state x
+
   | Sif (e, b1, b2) ->
     begin match e.expr_desc with
     | Econst c ->
@@ -360,6 +361,7 @@ let stmt (state: state) match_value: state =
       let stmt = mk_Dstmt (Seval e) ~loc in
       mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
     end
+
   | Sassign (id, e) ->
     let f e =
       let env = get_current_env state in
@@ -368,6 +370,7 @@ let stmt (state: state) match_value: state =
     in
     let e = mk_Dstmt (Seval e) ~loc in
     mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+
   | Swhile (cond, _inv, _var, b) ->
     begin match cond.expr_desc with
     | Econst c ->
@@ -378,6 +381,33 @@ let stmt (state: state) match_value: state =
       let stmt = mk_Dstmt (Seval cond) ~loc in
       mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
     end
+
+  | Sset (e1, e2, e3) ->
+    begin match e1.expr_desc, e2.expr_desc, e3.expr_desc with
+      | Econst (Evector v), Econst (Eint i), Econst c ->
+        let i = BigInt.of_string i |> transform_idx v |> BigInt.to_int in
+        set_vec v i c;
+        state
+      | Econst (Evector _v), _e2, Econst _c ->
+        let f e2 =
+          [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
+        in
+        let e = mk_Dstmt (Seval e2) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      | _e1, _e2, Econst _c ->
+        let f e1 =
+          [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
+        in
+        let e = mk_Dstmt (Seval e1) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      | _e1, _e2, _e3 ->
+        let f e3 =
+          [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
+        in
+        let e = mk_Dstmt (Seval e3) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    end
+
   | _ -> assert false
 
 let step (state: state): state =

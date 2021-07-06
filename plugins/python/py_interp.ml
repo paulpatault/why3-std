@@ -64,12 +64,18 @@ let py_div_mod n1 n2 =
 let py_div n1 n2 = fst (py_div_mod n1 n2)
 let py_mod n1 n2 = snd (py_div_mod n1 n2)
 
-let const_to_string = function
+let rec const_to_string = function
   | Enone     -> "None"
   | Ebool b   -> if b then "True" else "False"
   | Eint s    -> s
   | Estring s -> s
-  | Evector _ -> "vec"
+  | Evector v -> Printf.sprintf "[%s]" (list_to_string v 0)
+
+and list_to_string vec i =
+  if i = Vector.length vec then ""
+  else if i + 1 = Vector.length vec
+  then Printf.sprintf "%s" (const_to_string (get_vec vec i))
+  else Printf.sprintf "%s, %s" (const_to_string (get_vec vec i)) (list_to_string vec (i+1))
 
 let bool const =
   match const with

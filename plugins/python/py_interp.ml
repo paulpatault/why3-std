@@ -174,7 +174,7 @@ let expr (state: state) match_value: state =
     in
 
     let r = ref (Vector.create ~capacity:0 ~dummy:Enone) in
-    let stack = eval_list r l [] in
+    let stack = List.rev (eval_list r l []) in
 
     let f _ =
       let expr = mk_expr  (Econst (Evector !r)) ~loc in
@@ -254,6 +254,7 @@ let expr (state: state) match_value: state =
         let e = mk_Dstmt (Seval e) ~loc; in
         mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
     end
+
   | Eident (x: Why3.Ptree.ident)  ->
       begin try
         let env = get_current_env state in
@@ -263,6 +264,66 @@ let expr (state: state) match_value: state =
       with Not_found ->
         Loc.errorm ~loc "NameError: name '%s' is not defined" x.id_str
       end
+
+  | Emake (e1, e2) ->
+    begin match e1.expr_desc, e2.expr_desc with
+      | Econst c1, Econst c2 ->
+        begin match c1, c2 with
+          | _, Eint i ->
+            let v = Vector.make ~dummy:Enone (BigInt.of_string i |> BigInt.to_int) c1 in
+            let expr = mk_expr (Econst (Evector v)) ~loc in
+            let stmt = mk_Dstmt (Seval expr) ~loc in
+            mk_state state ~prog:(stmt::state.prog)
+          | _ -> assert false
+        end
+      | Econst c, _e2 -> 
+        let f e2 =
+          let expr = mk_expr (Emake (e1, e2)) ~loc in
+          [mk_Dstmt (Seval expr) ~loc]
+        in
+        let e = mk_Dstmt (Seval e2) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+
+      | _e1, _e2 -> 
+        let f e1 =
+          let expr = mk_expr (Emake (e1, e2)) ~loc in
+          [mk_Dstmt (Seval expr) ~loc]
+        in
+        let e = mk_Dstmt (Seval e1) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    end
+
+  | Eget (e1, e2) ->
+    begin match e1.expr_desc, e2.expr_desc with
+      | Econst c1, Econst c2 ->
+        begin match c1, c2 with
+          | Evector v, Eint i ->
+            let i = BigInt.of_string i |> transform_idx v |> BigInt.to_int in
+            begin try
+              let atom = get_vec v i in
+              let expr = mk_expr (Econst atom) ~loc in
+              let stmt = mk_Dstmt (Seval expr) ~loc in
+              mk_state state ~prog:(stmt::state.prog)
+            with Invalid_argument _s -> assert false end
+          | _ -> assert false
+        end
+      | Econst c, _e2 -> 
+        let f e2 =
+          let expr = mk_expr (Eget (e1, e2)) ~loc in
+          [mk_Dstmt (Seval expr) ~loc]
+        in
+        let e = mk_Dstmt (Seval e2) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+
+      | _e1, _e2 -> 
+        let f e1 =
+          let expr = mk_expr (Eget (e1, e2)) ~loc in
+          [mk_Dstmt (Seval expr) ~loc]
+        in
+        let e = mk_Dstmt (Seval e1) ~loc; in
+        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    end
+
   | Ecall (f, el) ->
     let rec eval_list r el state = match el with
       | []      -> state

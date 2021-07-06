@@ -15,25 +15,6 @@ let set_vec v i x =
   if i < Vector.length v && i >= 0 then Vector.set v i x
   else raise (Invalid_argument "Vector.set")
 
-let binop_to_string fmt = function
-  | Badd -> fprintf fmt "+"
-  | Bsub -> fprintf fmt "-"
-  | Bmul -> fprintf fmt "*"
-  | Bdiv -> fprintf fmt "//"
-  | Bmod -> fprintf fmt "%s" "%"
-  | Beq  -> fprintf fmt "=="
-  | Bneq -> fprintf fmt "!="
-  | Blt  -> fprintf fmt "<"
-  | Ble  -> fprintf fmt "<="
-  | Bgt  -> fprintf fmt ">"
-  | Bge  -> fprintf fmt ">="
-  | Band -> fprintf fmt "and"
-  | Bor  -> fprintf fmt  "or"
-
-let unop_to_string fmt = function
-  | Uneg -> fprintf fmt "-"
-  | Unot -> fprintf fmt "not"
-
 type func = (string, string list * block) Hashtbl.t
 
 type env = {
@@ -41,9 +22,16 @@ type env = {
   funcs: func;
 }
 
+type prog = {
+  main: block;
+  cont: block;
+  brk: block list;
+  ret: block list;
+}
+
 type state = {
   mutable stack: (expr -> block) list;
-  prog: block;
+  prog: prog;
   env: env list;
 }
 
@@ -124,10 +112,19 @@ let binop_logic = function
   | Bor ->  (||)
   | _    -> assert false
 
-let mk_state ?stack ?prog ?env state =
+let mk_state ?stack ?prog_main ?prog_brk ?prog_cont ?prog_ret ?env state =
   let stack = match stack with None -> state.stack | Some stack -> stack in
-  let prog = match prog with None -> state.prog | Some prog -> prog in
+  let prog_main = match prog_main with None -> state.prog.main | Some prog -> prog in
+  let prog_brk = match prog_brk with None -> state.prog.brk | Some prog -> prog in
+  let prog_cont = match prog_cont with None -> state.prog.cont | Some prog -> prog in
+  let prog_ret = match prog_ret with None -> state.prog.ret | Some prog -> prog in
   let env = match env with None -> state.env | Some env -> env in
+  let prog = {
+    main=prog_main;
+    brk=prog_brk;
+    cont=prog_cont;
+    ret=prog_ret;
+  } in
   {stack; prog; env}
 
 let mk_Dstmt stmt_desc ~loc =
@@ -159,7 +156,7 @@ let expr (state: state) match_value: state =
     | [] -> Printf.printf "%s\n" (const_to_string c); state
     | f::k ->
       let app = f match_value in
-      mk_state state ~stack:k ~prog:(app@state.prog)
+      mk_state state ~stack:k ~prog_main:(app@state.prog.main)
     end
 
   | Elist l ->
@@ -188,7 +185,7 @@ let expr (state: state) match_value: state =
     in
 
     let l = List.map (fun e -> mk_Dstmt (Seval e) ~loc:e.expr_loc) l in
-    mk_state state ~stack:(stack@f::state.stack) ~prog:(l@state.prog)
+    mk_state state ~stack:(stack@f::state.stack) ~prog_main:(l@state.prog.main)
 
   | Ebinop (b, e1, e2) ->
     begin match e1.expr_desc, e2.expr_desc with
@@ -201,13 +198,13 @@ let expr (state: state) match_value: state =
         let r = b n1 n2 in
         let expr = mk_expr (Econst (Eint (BigInt.to_string r))) ~loc in
         let res = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog:(res::state.prog)
+        mk_state state ~prog_main:(res::state.prog.main)
       | c1, c2, (Beq | Bneq | Blt | Ble | Bgt | Bge) ->
         let b = binop_comp ~loc b in
         let r = b c1 c2 in
         let expr = mk_expr (Econst (Ebool r)) ~loc in
         let res = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog:(res::state.prog)
+        mk_state state ~prog_main:(res::state.prog.main)
       | c1, c2, (Band | Bor) ->
         let b = binop_logic b in
         let b1 = bool c1 in
@@ -215,21 +212,21 @@ let expr (state: state) match_value: state =
         let r = b b1 b2 in
         let expr = mk_expr (Econst (Ebool r)) ~loc in
         let res = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog:(res::state.prog)
+        mk_state state ~prog_main:(res::state.prog.main)
       | _ -> assert false
       end
     | Econst e1', _e2 ->
       begin match e1', b with
       | Ebool true, Bor | Ebool false, Band ->
         let e1 = mk_Dstmt (Seval e1) ~loc in
-        mk_state state ~prog:(e1::state.prog)
+        mk_state state ~prog_main:(e1::state.prog.main)
       | _ ->
         let f e2 =
           let expr = mk_expr (Ebinop (b, e1, e2)) ~loc in
           [mk_Dstmt (Seval expr) ~loc]
         in
         let e = mk_Dstmt (Seval e2) ~loc:e2.expr_loc in
-        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+        mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
       end
     | _e1, _e2 ->
       let f e1 =
@@ -237,7 +234,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc:e1.expr_loc in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
   | Eunop (u, e) ->
@@ -246,19 +243,19 @@ let expr (state: state) match_value: state =
       let n = BigInt.of_string n in
       let expr = mk_expr (Econst (Eint (BigInt.minus n |> BigInt.to_string))) ~loc in
       let stmt = mk_Dstmt (Seval expr) ~loc in
-      mk_state state ~prog:(stmt::state.prog)
+      mk_state state ~prog_main:(stmt::state.prog.main)
     | Unot, Econst c ->
       let b = bool c in
       let expr = mk_expr (Econst (Ebool (not b))) ~loc in
       let stmt = mk_Dstmt (Seval expr) ~loc in
-      mk_state state ~prog:(stmt::state.prog)
+      mk_state state ~prog_main:(stmt::state.prog.main)
     | (Uneg | Unot), _e ->
       let f e =
         let expr = mk_expr (Eunop (u, e)) ~loc in
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
   | Eident (x: Why3.Ptree.ident)  ->
@@ -266,7 +263,7 @@ let expr (state: state) match_value: state =
         let env = get_current_env state in
         let e = Hashtbl.find env.vars x.id_str in
         let stmt = mk_Dstmt (Seval e) ~loc in
-        mk_state state ~prog:(stmt::state.prog)
+        mk_state state ~prog_main:(stmt::state.prog.main)
       with Not_found ->
         Loc.errorm ~loc "NameError: name '%s' is not defined" x.id_str
       end
@@ -279,7 +276,7 @@ let expr (state: state) match_value: state =
         let v = Vector.make ~dummy:Enone (BigInt.of_string i |> BigInt.to_int) c1 in
         let expr = mk_expr (Econst (Evector v)) ~loc in
         let stmt = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog:(stmt::state.prog)
+        mk_state state ~prog_main:(stmt::state.prog.main)
       | _ -> assert false
       end
     | Econst _c, _e2 ->
@@ -288,7 +285,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
 
     | _e1, _e2 ->
       let f e1 =
@@ -296,7 +293,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
   | Eget (e1, e2) ->
@@ -309,7 +306,7 @@ let expr (state: state) match_value: state =
           let atom = get_vec v i in
           let expr = mk_expr (Econst atom) ~loc in
           let stmt = mk_Dstmt (Seval expr) ~loc in
-          mk_state state ~prog:(stmt::state.prog)
+          mk_state state ~prog_main:(stmt::state.prog.main)
         with Invalid_argument _s -> assert false end
       | _ -> assert false
       end
@@ -319,7 +316,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
 
     | _e1, _e2 ->
       let f e1 =
@@ -327,7 +324,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
   | Ecall (f, el) ->
@@ -354,7 +351,7 @@ let stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
   match match_value.stmt_desc with
   | Sblock b ->
-      mk_state state ~prog:(b@state.prog)
+    mk_state state ~prog_main:(b@state.prog.main)
 
   | Seval x ->
     expr state x
@@ -363,12 +360,12 @@ let stmt (state: state) match_value: state =
     begin match e.expr_desc with
     | Econst c ->
       let b = if bool c then b1 else b2 in
-      mk_state state ~prog:(b@state.prog)
+      mk_state state ~prog_main:(b@state.prog.main)
     | e ->
       let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
       let e = mk_expr e ~loc in
       let stmt = mk_Dstmt (Seval e) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
     end
 
   | Sassign (id, e) ->
@@ -378,35 +375,42 @@ let stmt (state: state) match_value: state =
       []
     in
     let e = mk_Dstmt (Seval e) ~loc in
-    mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+    mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
 
   | Sfor (id, e, _inv, b) ->
-      begin match e.expr_desc with
-      | Econst (Evector v) ->
-          if Vector.is_empty v then state
-          else
-            let hd, tl = get_hd_tl_vec v e.expr_loc in
-            let env = (get_current_env state).vars in
-            Hashtbl.replace env id.id_str hd;
-            let stmt = mk_Dstmt (Sfor(id, tl, _inv, b)) ~loc in
-            let prog = b@stmt::state.prog in
-            mk_state state ~prog
-      | Econst _ -> assert false
-      | _v ->
-        let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
-        let e = mk_Dstmt (Seval e) ~loc in
-        mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
-        end
+    begin match e.expr_desc with
+    | Econst (Evector v) ->
+        if Vector.is_empty v then state
+        else
+          let hd, tl = get_hd_tl_vec v e.expr_loc in
+          let env = (get_current_env state).vars in
+          Hashtbl.replace env id.id_str hd;
+          let stmt = mk_Dstmt (Sfor(id, tl, _inv, b)) ~loc in
+          let prog_main = b@stmt::state.prog.main in
+          mk_state state ~prog_main
+    | Econst _ -> assert false
+    | _v ->
+      let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
+      let e = mk_Dstmt (Seval e) ~loc in
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      end
 
   | Swhile (cond, _inv, _var, b) ->
     begin match cond.expr_desc with
     | Econst c ->
-      if bool c then mk_state state ~prog:(b@state.prog)
-      else state
+      if bool c then
+        let prog_brk = state.prog.main::state.prog.brk in
+        mk_state state ~prog_main:(b@[Dstmt match_value]@state.prog.main) ~prog_brk
+      else
+        begin match state.prog.brk with
+        | [] -> state
+        | _::k -> mk_state state ~prog_brk:k
+        end
     | _ ->
       let f e = [mk_Dstmt (Sif(e, b@[Dstmt match_value], [])) ~loc] in
       let stmt = mk_Dstmt (Seval cond) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog:(stmt::state.prog)
+      let prog_brk = state.prog.main::state.prog.brk in
+      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main) ~prog_brk
     end
 
   | Sset (e1, e2, e3) ->
@@ -420,38 +424,46 @@ let stmt (state: state) match_value: state =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     | _e1, _e2, Econst _c ->
       let f e1 =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     | _e1, _e2, _e3 ->
       let f e3 =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e3) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog:(e::state.prog)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
-  | Sreturn x -> assert false
-  | Sbreak -> assert false
+  | Sreturn _ -> assert false
+
+  | Sbreak ->
+    Printf.printf "t=%d\n" (List.length state.prog.brk);
+    begin match state.prog.brk with
+    | [] -> assert false
+    | e::k -> mk_state state ~prog_main:e ~prog_brk:k
+    end
   | Scontinue -> assert false
+
   | Sassert _ | Slabel _ -> state
 
 let step (state: state): state =
-  match state.prog with
+  match state.prog.main with
   | [] -> assert false
   | s::k ->
-      let state = {stack=state.stack; prog=k; env=state.env} in
+      let state = mk_state state ~prog_main:k in
       stmt state s
 
 let little_steps path =
   let c = open_in path in
   let file = Py_lexer.parse path c in
-  let state = ref {stack=[]; prog=file; env=[mk_new_env ()]} in
-  while !state.stack <> [] || !state.prog <> [] do
+  let prog = {main=file; brk=[]; ret=[]; cont=[]} in
+  let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
+  while !state.stack <> [] || !state.prog.main <> [] do
     state := step !state;
   done
 

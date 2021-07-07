@@ -37,14 +37,14 @@ type state = {
 
 module Pprinter =
   struct
-    let type_to_string fmt = function
+    let type_const fmt = function
       | Enone     -> fprintf fmt "NoneType"
       | Ebool _   -> fprintf fmt "bool"
       | Eint _    -> fprintf fmt "int"
       | Estring _ -> fprintf fmt "str"
       | Evector _   -> fprintf fmt "list"
 
-    let binop_to_string fmt = function
+    let binop fmt = function
       | Badd -> fprintf fmt "+"
       | Bsub -> fprintf fmt "-"
       | Bmul -> fprintf fmt "*"
@@ -59,84 +59,89 @@ module Pprinter =
       | Band -> fprintf fmt "and"
       | Bor  -> fprintf fmt  "or"
 
-    let unop_to_string fmt = function
+    let ident fmt (i: Py_ast.ident) =
+      fprintf fmt "%s" i.id_str
+
+    let unop fmt = function
       | Uneg -> fprintf fmt "-"
       | Unot -> fprintf fmt "not"
 
-    let rec const_to_string fmt = function
+    let rec const fmt = function
       | Enone     -> fprintf fmt "None"
       | Ebool b   -> if b then fprintf fmt "True" else fprintf fmt "False"
       | Eint s    -> fprintf fmt "%s" s
-      | Estring s    -> fprintf fmt "%s" s
-      | Evector v -> fprintf fmt "[%a]" list_to_string (v, 0)
+      | Estring s -> fprintf fmt "%s" s
+      | Evector v -> const_list fmt v
 
-    and list_to_string fmt (vec, i) =
-      if i = Vector.length vec then ()
-      else if i + 1 = Vector.length vec
-      then fprintf fmt "%a" const_to_string (get_vec vec i)
-      else fprintf fmt "%a, %a" const_to_string (get_vec vec i) list_to_string (vec, (i+1))
+    and const_list fmt vec =
+      let rec aux fmt (v, i) =
+        if i = Vector.length v then ()
+        else if i + 1 = Vector.length v
+        then fprintf fmt "%a" const (get_vec v i)
+        else fprintf fmt "%a, %a" const (get_vec v i) aux (v, (i+1))
+      in
+      fprintf fmt "[%a]" aux (vec, 0)
 
-    let rec expr_to_string fmt e =
+    let rec expr fmt e =
       match e.expr_desc with
-      | Econst a -> const_to_string fmt a
-      | Eident i -> fprintf fmt "i"
+      | Econst a -> const fmt a
+      | Eident i -> ident fmt i
       | Ebinop (b, e1, e2) ->
-        fprintf fmt "(%a %a %a)" expr_to_string e1 binop_to_string b expr_to_string e2
+        fprintf fmt "%a %a %a" expr e1 binop b expr e2
       | Eunop (u, e) ->
-        fprintf fmt "(%a %a)" unop_to_string u expr_to_string e
-      | Ecall (i, el) -> (*TODO i*)
-        fprintf fmt "function_i_(%a)" expr_list_to_string el
-      | Edot (e, i, el) -> (*TODO i*)
-        fprintf fmt "%a._i_(%a)" expr_to_string e expr_list_to_string el
+        fprintf fmt "%a %a" unop u expr e
+      | Ecall (i, el) ->
+        fprintf fmt "%a(%a)" ident i expr_list el
+      | Edot (e, i, el) ->
+        fprintf fmt "%a.%a(%a)" ident i expr e expr_list el
       | Elist el ->
-        fprintf fmt "[%a]" expr_list_to_string el
+        fprintf fmt "[%a]" expr_list el
       | Emake (e1, e2) ->
-        fprintf fmt "[%a] * %a" expr_to_string e1 expr_to_string e2
+        fprintf fmt "[%a] * %a" expr e1 expr e2
       | Eget (e1, e2) ->
-        fprintf fmt "%a[%a]" expr_to_string e1 expr_to_string e2
-    and expr_list_to_string fmt = function
+        fprintf fmt "%a[%a]" expr e1 expr e2
+    and expr_list fmt = function
       | [] -> ()
-      | [e] -> fprintf fmt "%a" expr_to_string e
-      | e::k -> fprintf fmt "%a, %a" expr_to_string e expr_list_to_string k
+      | [e] -> fprintf fmt "%a" expr e
+      | e::k -> fprintf fmt "%a, %a" expr e expr_list k
 
-    let rec stmt_to_string fmt s =
+    let rec stmt fmt s =
       match s.stmt_desc with
       | Sblock b ->
-        block_to_string fmt b
+        block fmt b
       | Sif (e, b1, b2) ->
-          fprintf fmt "if %a:@.@[%a@]else:@.@[%a@]" expr_to_string e block_to_string b1 block_to_string b2
+          begin match b2 with
+          | [] ->
+            fprintf fmt "@[<v 4>if %a:%a@]" expr e block b1
+          | _  ->
+            fprintf fmt "@[<v 4>if %a:%a@]@,@[<v 4>else:%a@]" expr e block b1 block b2
+          end
       | Sreturn e ->
-        fprintf fmt "return %a@." expr_to_string e
+        fprintf fmt "return %a" expr e
       | Sassign (i, e) ->
-        fprintf fmt "_i_ = %a@." expr_to_string e
+        fprintf fmt "%a = %a" ident i expr e
       | Swhile (e, _, _, b) ->
-          fprintf fmt "while %a:@.@[<hov 2>%a@]@." expr_to_string e block_to_string b
+          fprintf fmt "@[<v 4>while %a:%a@]" expr e block b
       | Sfor (i, e, _, b) ->
-          fprintf fmt "for _i_ in %a:@.@[%a@]" expr_to_string e block_to_string b
+          fprintf fmt "@[<v 4>for %a in %a:%a@]" ident i expr e block b
       | Seval e ->
-        expr_to_string fmt e
+        expr fmt e
       | Sset (e1, e2, e3) ->
-        fprintf fmt "%a[%a] = %a@." expr_to_string e1 expr_to_string e2 expr_to_string e3
-      | Sbreak -> fprintf fmt "break@."
-      | Scontinue -> fprintf fmt "continue@."
+        fprintf fmt "%a[%a] = %a@ " expr e1 expr e2 expr e3
+      | Sbreak -> fprintf fmt "break"
+      | Scontinue -> fprintf fmt "continue"
       | _ -> assert false
 
-    and stmt_list_to_string fmt = function
-      | [] -> ()
-      | [e] -> fprintf fmt "%a" stmt_to_string e
-      | e::k -> fprintf fmt "%a, %a" stmt_to_string e stmt_list_to_string k
-
-    and decl_to_string fmt = function
+    and decl fmt = function
       | Ddef _ | Dimport _ | Dlogic _ -> ()
-      | Dstmt s -> stmt_to_string fmt s
+      | Dstmt s -> fprintf fmt "@,@[<v 4>%a@]" stmt s
 
-    and block_to_string fmt = function
+    and block fmt = function
       | [] -> ()
-      | [e] -> fprintf fmt "@[%a@]" decl_to_string e
-      | e::k -> fprintf fmt "@[%a@] @[%a@]" decl_to_string e block_to_string k
+      | [e] -> fprintf fmt "%a@," decl e
+      | e::k -> fprintf fmt "%a@,%a" decl e block k
   end
 
-open Pprinter
 
 let mk_new_env () =
   { vars = Hashtbl.create 10; funcs = Hashtbl.create 10 }
@@ -179,7 +184,7 @@ let rec py_compare v1 v2 ~loc =
   | _ ->
     Loc.errorm ~loc
       "TypeError: comparison not supported between instances of '%a' and '%a'"
-      const_to_string v1 const_to_string v2
+      Pprinter.const v1 Pprinter.const v2
 
 let binop_comp ~loc = function
   | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
@@ -253,7 +258,7 @@ let expr (state: state) match_value: state =
   match match_value.expr_desc with
   | Econst c ->
     begin match state.stack with
-    | [] -> Printf.printf "%s\n" (asprintf "%a" const_to_string c); state
+    | [] -> Printf.printf "%s\n" (asprintf "%a" Pprinter.const c); state
     | f::k ->
       let app = f match_value in
       mk_state state ~stack:k ~prog_main:(app@state.prog.main)
@@ -645,7 +650,7 @@ let little_steps path =
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
     let _ = read_line () in
-    Printf.printf "%s\n" (asprintf "%a" block_to_string !state.prog.main);
+    Printf.printf "-----------\n%s\n-----------" (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
     state := step !state;
   done
 

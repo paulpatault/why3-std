@@ -35,8 +35,6 @@ type state = {
   env: env list;
 }
 
-
-
 module Pprinter =
   struct
     let type_to_string fmt = function
@@ -433,7 +431,7 @@ let expr (state: state) match_value: state =
     begin try
       let params, b = Hashtbl.find (get_current_env state).funcs f.id_str in
 
-      let not_const () = 
+      let not_const () =
         let f e =
           let expr = mk_expr (Ecall(f, [e])) ~loc in
           [mk_Dstmt (Seval expr) ~loc]
@@ -453,11 +451,11 @@ let expr (state: state) match_value: state =
               mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
             | _ -> not_const ()
             end
-        | [] -> 
+        | [] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
         | _ -> not_const ()
-          
+
       end
     with Not_found -> assert false end
 
@@ -617,8 +615,7 @@ let rec stmt (state: state) match_value: state =
         let stmt = mk_Dstmt (Seval e) ~loc in
         mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
     end
-    
-  
+
   | Sbreak ->
     begin match state.prog.brk, state.prog.cont with
     | [], [] -> assert false
@@ -655,8 +652,8 @@ let little_steps path =
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
-    let _ = read_line () in
-    Printf.printf "%s\n" (asprintf "%a" block_to_string prog.main);
+    (* let _ = read_line () in
+    Printf.printf "%s\n" (asprintf "%a" block_to_string prog.main); *)
     state := step !state;
   done
 

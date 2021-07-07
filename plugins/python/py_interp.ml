@@ -162,7 +162,7 @@ let rec py_compare v1 v2 ~loc =
   | _ ->
       Loc.errorm ~loc
         "TypeError: comparison not supported between instances of '%a' and '%a'"
-        type_to_string v1 type_to_string v2
+        Pprinter.type_const v1 Pprinter.type_const v2
 
 module Primitives =
   struct
@@ -180,7 +180,7 @@ module Primitives =
       aux 0 []
 
     let input ~loc = function
-      | [c] -> Estring (!input_ref (asprintf "%a" const_to_string c))
+      | [c] -> Estring (!input_ref (asprintf "%a" Pprinter.const c))
       | []  -> Estring (!input_ref "")
       | l   -> Loc.errorm ~loc
           "TypeError: input expected at most 1 argument, got %d" (List.length l)
@@ -198,7 +198,7 @@ module Primitives =
           end
       | [v] -> Loc.errorm ~loc
           "int() argument must be a string, a number or a bool, not '%a'"
-          type_to_string v
+          Pprinter.type_const v
       | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
     (* let print ~loc vl =
@@ -220,7 +220,7 @@ module Primitives =
           Eint (BigInt.of_int (Random.int (hi' - lo' + 1) + lo') |> BigInt.to_string)
       | [v1; v2] -> Loc.errorm ~loc
           "TypeError: randint() arguments must be int, not '%a' and '%a'"
-          type_to_string v1 type_to_string v2
+          Pprinter.type_const v1 Pprinter.type_const v2
       | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
 
   let range ~loc vl =
@@ -240,13 +240,13 @@ module Primitives =
         | [Eint hi] ->
             aux BigInt.zero (BigInt.of_string hi)
         | [v] ->
-            Loc.errorm ~loc "TypeError: range() arguments must be int, not '%a'" type_to_string v
+            Loc.errorm ~loc "TypeError: range() arguments must be int, not '%a'" Pprinter.type_const v
         | [Eint lo; Eint hi] ->
             aux (BigInt.of_string lo) (BigInt.of_string hi)
         | [v1; v2] ->
             Loc.errorm ~loc
               "TypeError: range() arguments must be int, not '%a' and '%a'"
-              type_to_string v1 type_to_string v2
+              Pprinter.type_const v1 Pprinter.type_const v2
         | [Eint le; Eint ri; Eint step] ->
             let le = BigInt.of_string le |> BigInt.to_int in
             let ri = BigInt.of_string ri |> BigInt.to_int in
@@ -263,7 +263,7 @@ module Primitives =
         | [v1; v2; v3] ->
             Loc.errorm ~loc
               "TypeError: range() arguments must be int, not '%a', '%a' and '%a'"
-              type_to_string v1 type_to_string v2 type_to_string v3
+              Pprinter.type_const v1 Pprinter.type_const v2 Pprinter.type_const v3
         | [] ->
             Loc.errorm ~loc "TypeError: range expected at least 1 argument, got 0"
         | l ->
@@ -276,7 +276,7 @@ module Primitives =
 
     let attribute_error t m =
       sprintf "AttributeError: '%s' object has no attribute '%s'"
-        (asprintf "%a" type_to_string t) m
+        (asprintf "%a" Pprinter.type_const t) m
 
     let pop ~loc = function
       | [Evector v] ->
@@ -933,8 +933,8 @@ let little_steps path =
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
-    let _ = read_line () in
-    Printf.printf "-----------\n%s\n-----------" (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
+    (* let _ = read_line () in
+    Printf.printf "-----------\n%s\n-----------" (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
     state := step !state;
   done
 

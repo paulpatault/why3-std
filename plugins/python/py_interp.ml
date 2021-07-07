@@ -743,7 +743,7 @@ let expr (state: state) match_value: state =
           mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
       end
     with Not_found -> assert false end
-  
+
 let rec stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
   match match_value.stmt_desc with
@@ -787,11 +787,11 @@ let rec stmt (state: state) match_value: state =
       | Some {stmt_desc=Sfor(_, _, _, b');_} -> not (b' == b)
       | _      -> true in
 
-    let prog_brk, prog_cont =
+    let prog_brk =
       if first then
-        state.prog.main::state.prog.brk, (Dstmt match_value::state.prog.main)::state.prog.cont
+        state.prog.main::state.prog.brk
       else
-        state.prog.brk, state.prog.cont
+        state.prog.brk
     in
 
     begin match e.expr_desc with
@@ -806,11 +806,21 @@ let rec stmt (state: state) match_value: state =
           Hashtbl.replace env id.id_str hd_vec;
           let stmt = mk_Dstmt (Sfor(id, tl_vec, _inv, b)) ~loc in
           let prog_main = b@stmt::state.prog.main in
+
+          let prog_cont =
+            match state.prog.cont with
+            | [] -> assert false
+            | hd::tl ->
+              if not first then (stmt::state.prog.main)::tl
+              else (stmt::state.prog.main)::state.prog.cont
+          in
+
           mk_state state ~prog_main ~prog_brk ~prog_cont
     | Econst _ -> assert false
     | _v ->
       let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
       let e = mk_Dstmt (Seval e) ~loc in
+      let prog_cont = (Dstmt match_value::state.prog.main)::state.prog.cont in
       mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
       end
 

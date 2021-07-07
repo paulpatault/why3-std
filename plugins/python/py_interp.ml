@@ -489,22 +489,20 @@ let rec stmt (state: state) match_value: state =
 
     let hd =
       match get_hd state.prog.cont with
-      | Dstmt ({stmt_desc=Sfor(_, _, _, b);_} as stmt)::_ -> Some b, Some stmt
-      | _          -> None, None
+      | Dstmt m::_ -> Some m
+      | _          -> None
     in
 
     let first =
       match hd with
-      | Some h, _ -> not (h == b)
-      | _         -> true in
+      | Some {stmt_desc=Sfor(_, _, _, b');_} -> not (b' == b)
+      | _      -> true in
 
     let prog_brk, prog_cont =
       if first then
         state.prog.main::state.prog.brk, (Dstmt match_value::state.prog.main)::state.prog.cont
       else
-        let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
-        let state = mk_state state ~prog_brk ~prog_cont in
-        state.prog.main::state.prog.brk, (Dstmt match_value::state.prog.main)::state.prog.cont
+        state.prog.brk, state.prog.cont
     in
 
     begin match e.expr_desc with
@@ -646,8 +644,8 @@ let little_steps path =
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
-    let _ = read_line () in
-    Printf.printf "%s\n" (asprintf "%a" block_to_string !state.prog.main);
+    (* let _ = read_line () in
+    Printf.printf "%s\n" (asprintf "%a" block_to_string !state.prog.main); *)
     state := step !state;
   done
 

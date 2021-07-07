@@ -435,8 +435,10 @@ let expr (state: state) match_value: state =
         | [{expr_desc=Econst (Evector v)}] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           let idx = ref 0 in
-          List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
-          mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+          if List.length params <> Vector.length v then assert false
+          else
+            List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
+            mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
         | [] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)

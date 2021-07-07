@@ -81,7 +81,7 @@ module Pprinter =
       | Econst a -> const_to_string fmt a
       | Eident i -> fprintf fmt "i"
       | Ebinop (b, e1, e2) ->
-        fprintf fmt "(%a %a %a)" binop_to_string b expr_to_string e1 expr_to_string e2
+        fprintf fmt "(%a %a %a)" expr_to_string e1 binop_to_string b expr_to_string e2
       | Eunop (u, e) ->
         fprintf fmt "(%a %a)" unop_to_string u expr_to_string e
       | Ecall (i, el) -> (*TODO i*)
@@ -104,15 +104,15 @@ module Pprinter =
       | Sblock b ->
         block_to_string fmt b
       | Sif (e, b1, b2) ->
-        fprintf fmt "if %a:@.   %a@.else:@.   %a@." expr_to_string e block_to_string b1 block_to_string b2
+          fprintf fmt "if %a:@.@[%a@]else:@.@[%a@]" expr_to_string e block_to_string b1 block_to_string b2
       | Sreturn e ->
         fprintf fmt "return %a@." expr_to_string e
       | Sassign (i, e) ->
         fprintf fmt "_i_ = %a@." expr_to_string e
       | Swhile (e, _, _, b) ->
-        fprintf fmt "while %a:@.%a@." expr_to_string e block_to_string b
+          fprintf fmt "while %a:@.@[<hov 2>%a@]@." expr_to_string e block_to_string b
       | Sfor (i, e, _, b) ->
-        fprintf fmt "for _i_ in %a:@.%a@." expr_to_string e block_to_string b
+          fprintf fmt "for _i_ in %a:@.@[%a@]" expr_to_string e block_to_string b
       | Seval e ->
         expr_to_string fmt e
       | Sset (e1, e2, e3) ->
@@ -132,8 +132,8 @@ module Pprinter =
 
     and block_to_string fmt = function
       | [] -> ()
-      | [e] -> fprintf fmt "%a@." decl_to_string e
-      | e::k -> fprintf fmt "%a@.%a" decl_to_string e block_to_string k
+      | [e] -> fprintf fmt "@[%a@]" decl_to_string e
+      | e::k -> fprintf fmt "@[%a@] @[%a@]" decl_to_string e block_to_string k
   end
 
 open Pprinter
@@ -543,7 +543,7 @@ let rec stmt (state: state) match_value: state =
 
     let first =
       match hd with
-      | Some h -> not (h == match_value)
+      | Some {stmt_desc=Swhile(_, _, _, b');_} -> not (b' == b)
       | _      -> true in
 
     let prog_brk =
@@ -652,8 +652,8 @@ let little_steps path =
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
-    (* let _ = read_line () in
-    Printf.printf "%s\n" (asprintf "%a" block_to_string prog.main); *)
+    let _ = read_line () in
+    Printf.printf "%s\n" (asprintf "%a" block_to_string !state.prog.main);
     state := step !state;
   done
 

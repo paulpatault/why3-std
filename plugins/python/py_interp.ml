@@ -24,7 +24,7 @@ type env = {
 
 type prog = {
   main: block;
-  cont: block;
+  cont: block list;
   brk: block list;
   ret: block list;
 }
@@ -140,6 +140,15 @@ let get_current_env state =
   match state.env with
   | [] -> assert false
   | env::_ -> env
+
+let loop_out = function
+  | _::brk, _::cont -> brk, cont
+  | [], []          -> [], []
+  | _ -> assert false
+
+let get_hd = function
+  | [] -> []
+  | hd::_ -> hd
 
 let get_hd_tl_vec vec ~loc =
   if Vector.is_empty vec then assert false
@@ -396,21 +405,37 @@ let stmt (state: state) match_value: state =
       end
 
   | Swhile (cond, _inv, _var, b) ->
+
+    let hd =
+      match get_hd state.prog.cont with
+      | Dstmt m::_ -> Some m
+      | _          -> None
+    in
+
+    let first =
+      match hd with
+      | Some h -> not (h == match_value)
+      | _      -> true in
+
+    let prog_brk =
+      if first then state.prog.main::state.prog.brk
+      else state.prog.brk in
+    let prog_cont =
+      if first then (Dstmt match_value::state.prog.main)::state.prog.cont
+      else state.prog.cont in
+
     begin match cond.expr_desc with
     | Econst c ->
       if bool c then
-        let prog_brk = state.prog.main::state.prog.brk in
-        mk_state state ~prog_main:(b@[Dstmt match_value]@state.prog.main) ~prog_brk
+        let while_ = if first then match_value else Opt.get hd in
+        mk_state state ~prog_main:(b@[Dstmt while_]@state.prog.main) ~prog_brk ~prog_cont
       else
-        begin match state.prog.brk with
-        | [] -> state
-        | _::k -> mk_state state ~prog_brk:k
-        end
+        let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
+        mk_state state ~prog_brk ~prog_cont
     | _ ->
-      let f e = [mk_Dstmt (Sif(e, b@[Dstmt match_value], [])) ~loc] in
+      let f e = [mk_Dstmt (Swhile(e, _inv, _var, b)) ~loc] in
       let stmt = mk_Dstmt (Seval cond) ~loc in
-      let prog_brk = state.prog.main::state.prog.brk in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main) ~prog_brk
+      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main) ~prog_brk ~prog_cont
     end
 
   | Sset (e1, e2, e3) ->
@@ -442,12 +467,17 @@ let stmt (state: state) match_value: state =
   | Sreturn _ -> assert false
 
   | Sbreak ->
-    Printf.printf "t=%d\n" (List.length state.prog.brk);
-    begin match state.prog.brk with
-    | [] -> assert false
-    | e::k -> mk_state state ~prog_main:e ~prog_brk:k
+    begin match state.prog.brk, state.prog.cont with
+    | [], [] -> assert false
+    | e1::k1, e2::k2 -> mk_state state ~prog_main:e1 ~prog_brk:k1 ~prog_cont:k2
+    | _ -> assert false
     end
-  | Scontinue -> assert false
+
+  | Scontinue ->
+    begin match state.prog.cont with
+    | [] -> assert false
+    | e::_ -> mk_state state ~prog_main:e
+    end
 
   | Sassert _ | Slabel _ -> state
 

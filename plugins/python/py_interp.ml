@@ -431,31 +431,23 @@ let expr (state: state) match_value: state =
     begin try
       let params, b = Hashtbl.find (get_current_env state).funcs f.id_str in
 
-      let not_const () =
-        let f e =
-          let expr = mk_expr (Ecall(f, [e])) ~loc in
-          [mk_Dstmt (Seval expr) ~loc]
-        in
-        let expr = mk_expr (Elist el) ~loc in
-        let stmt = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
-      in
-
       begin match el with
-        | [e] ->
-          begin match e.expr_desc with
-            | Econst (Evector v) ->
-              let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
-              let idx = ref 0 in
-              List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
-              mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
-            | _ -> not_const ()
-            end
+        | [{expr_desc=Econst (Evector v)}] ->
+          let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
+          let idx = ref 0 in
+          List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
+          mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
         | [] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
-        | _ -> not_const ()
-
+        | _ ->
+          let f e =
+            let expr = mk_expr (Ecall(f, [e])) ~loc in
+            [mk_Dstmt (Seval expr) ~loc]
+          in
+          let expr = mk_expr (Elist el) ~loc in
+          let stmt = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
       end
     with Not_found -> assert false end
 

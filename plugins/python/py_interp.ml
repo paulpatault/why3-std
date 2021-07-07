@@ -201,13 +201,13 @@ module Primitives =
           Pprinter.type_const v
       | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
-    (* let print ~loc vl =
+    let print ~loc vl =
       let rec aux = function
-        | [v] -> !print_ref (asprintf "%a@." print_value v)
-        | v::lv -> !print_ref (asprintf "%a " print_value v); aux lv
+        | [v] -> !print_ref (asprintf "%a@." Pprinter.const v)
+        | v::lv -> !print_ref (asprintf "%a " Pprinter.const v); aux lv
         | [] -> ()
       in aux vl;
-      Vnone *)
+      Enone
 
     let randint ~loc = function
       | [Eint lo; Eint hi] ->
@@ -373,7 +373,7 @@ module Primitives =
       Hashtbl.add list_func_table "sort" sort;
 
       Hashtbl.add std_func_table "int" int;
-      (* Hashtbl.add std_func_table "print" print; *)
+      Hashtbl.add std_func_table "print" print;
       Hashtbl.add std_func_table "range" range;
       Hashtbl.add std_func_table "randint" randint;
       Hashtbl.add std_func_table "slice" slice;
@@ -497,7 +497,7 @@ let expr (state: state) match_value: state =
   match match_value.expr_desc with
   | Econst c ->
     begin match state.stack with
-    | [] -> Printf.printf "%s\n" (asprintf "%a" Pprinter.const c); state
+    | [] -> state
     | f::k ->
       let app = f match_value in
       mk_state state ~stack:k ~prog_main:(app@state.prog.main)
@@ -557,7 +557,9 @@ let expr (state: state) match_value: state =
         let expr = mk_expr (Econst (Ebool r)) ~loc in
         let res = mk_Dstmt (Seval expr) ~loc in
         mk_state state ~prog_main:(res::state.prog.main)
-      | _ -> assert false
+      | c1, c2, b -> Loc.errorm ~loc
+          "TypeError: unsupported operand type(s) for %a: '%a' and '%a'"
+          Pprinter.binop b Pprinter.type_const c1 Pprinter.type_const c2
       end
     | Econst e1', _e2 ->
       begin match e1', b with
@@ -588,6 +590,9 @@ let expr (state: state) match_value: state =
       let expr = mk_expr (Econst (Eint (BigInt.minus n |> BigInt.to_string))) ~loc in
       let stmt = mk_Dstmt (Seval expr) ~loc in
       mk_state state ~prog_main:(stmt::state.prog.main)
+    | Uneg, Econst c ->
+      Loc.errorm ~loc "TypeError: bad operand type for unary %a: '%a'"
+        Pprinter.unop u Pprinter.type_const c
     | Unot, Econst c ->
       let b = bool c in
       let expr = mk_expr (Econst (Ebool (not b))) ~loc in
@@ -609,7 +614,7 @@ let expr (state: state) match_value: state =
         let stmt = mk_Dstmt (Seval e) ~loc in
         mk_state state ~prog_main:(stmt::state.prog.main)
       with Not_found ->
-        Loc.errorm ~loc "NameError: name '%s' is not defined" x.id_str
+        Loc.errorm ~loc "NameError: name '%a' is not defined" Pprinter.ident x
       end
 
   | Emake (e1, e2) ->
@@ -621,7 +626,9 @@ let expr (state: state) match_value: state =
         let expr = mk_expr (Econst (Evector v)) ~loc in
         let stmt = mk_Dstmt (Seval expr) ~loc in
         mk_state state ~prog_main:(stmt::state.prog.main)
-      | _ -> assert false
+      | _ -> Loc.errorm ~loc
+        "TypeError: can't multiply sequence by non-int of type '%a'" Pprinter.type_const c2
+
       end
     | Econst _c, _e2 ->
       let f e2 =
@@ -651,8 +658,14 @@ let expr (state: state) match_value: state =
           let expr = mk_expr (Econst atom) ~loc in
           let stmt = mk_Dstmt (Seval expr) ~loc in
           mk_state state ~prog_main:(stmt::state.prog.main)
-        with Invalid_argument _s -> assert false end
-      | _ -> assert false
+        with Invalid_argument _ -> Loc.errorm ~loc "IndexError: list index out of range" end
+      | Evector v, non_int ->
+        Loc.errorm ~loc
+          "TypeError: list indices must be integers or slices, not %a"
+          Pprinter.type_const non_int
+      | non_list, _e ->
+        Loc.errorm ~loc
+          "TypeError: '%a' object is not subscriptable" Pprinter.type_const non_list
       end
     | Econst _c, _e2 ->
       let f e2 =
@@ -703,16 +716,37 @@ let expr (state: state) match_value: state =
         | [{expr_desc=Econst (Evector params)}] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           let idx = ref 0 in
-          if List.length params_id <> Vector.length params then assert false
+          if List.length params_id <> Vector.length params
+          then
+            Loc.errorm ~loc
+              "TypeError: %a() takes %d positional argument but %d were given"
+              Pprinter.ident id (List.length params_id) (Vector.length params)
           else
-            List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get params !idx)) ~loc); incr idx) params_id;
-            mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+            List.iter
+              (fun id ->
+                Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get params !idx)) ~loc);
+                incr idx)
+              params_id;
+            mk_state state
+              ~prog_main:(b@state.prog.main)
+              ~prog_ret:(state.prog.main::state.prog.ret)
+              ~env:(envf::state.env)
         | [] ->
+          if List.length params_id <> 0 then
+            Loc.errorm ~loc
+              "TypeError: %a() takes %d positional argument but 0 were given"
+              Pprinter.ident id (List.length params_id)
+          else
+
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
-          mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+          mk_state state
+            ~prog_main:(b@state.prog.main)
+            ~prog_ret:(state.prog.main::state.prog.ret)
+            ~env:(envf::state.env)
         | _ -> not_const ()
       end
-    with Not_found -> assert false end
+    with Not_found ->
+      Loc.errorm ~loc "NameError: name '%a' is not defined" Pprinter.ident id end
     end
 
   | Edot (l, id, params) ->
@@ -742,7 +776,9 @@ let expr (state: state) match_value: state =
           let stmt = mk_Dstmt (Seval expr) ~loc in
           mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
       end
-    with Not_found -> assert false end
+    with Not_found ->
+      Loc.errorm ~loc "AttributeError: 'list' object has no attribute '%a'" Pprinter.ident id
+    end
 
 let rec stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
@@ -816,7 +852,8 @@ let rec stmt (state: state) match_value: state =
           in
 
           mk_state state ~prog_main ~prog_brk ~prog_cont
-    | Econst _ -> assert false
+    | Econst c ->
+      Loc.errorm ~loc:e.expr_loc "TypeError: '%a' object is not iterable" Pprinter.const c
     | _v ->
       let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
       let e = mk_Dstmt (Seval e) ~loc in
@@ -862,14 +899,25 @@ let rec stmt (state: state) match_value: state =
     begin match e1.expr_desc, e2.expr_desc, e3.expr_desc with
     | Econst (Evector v), Econst (Eint i), Econst c ->
       let i = BigInt.of_string i |> transform_idx v |> BigInt.to_int in
-      set_vec v i c;
-      state
+      begin try
+        set_vec v i c;
+        state
+      with Invalid_argument _ ->
+        Loc.errorm ~loc "IndexError: list index out of range"
+      end
+    | Econst (Evector v), Econst non_int, Econst c ->
+        Loc.errorm ~loc:e2.expr_loc
+          "TypeError: list indices must be integers or slices, not %a"
+          Pprinter.type_const non_int
     | Econst (Evector _v), _e2, Econst _c ->
       let f e2 =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
       mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+    | Econst non_vec, Econst _, Econst c ->
+      Loc.errorm ~loc:e1.expr_loc
+        "TypeError: '%a' object is not subscriptable" Pprinter.type_const non_vec
     | _e1, _e2, Econst _c ->
       let f e1 =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
@@ -888,7 +936,7 @@ let rec stmt (state: state) match_value: state =
     begin match e.expr_desc with
       | Econst _c ->
         let env = match state.env with
-        | _::[] -> assert false
+        | _::[] -> Loc.errorm ~loc "SyntaxError: 'return' outside function"
         | _::env -> env
         | _ -> assert false
         in
@@ -896,7 +944,7 @@ let rec stmt (state: state) match_value: state =
         let prog_main, prog_ret =
           match state.prog.ret with
             | ret::tr -> (stmt::ret), tr
-            | _ -> assert false
+            | [] -> Loc.errorm ~loc "SyntaxError: 'return' outside function"
         in
         mk_state state ~prog_main ~prog_ret ~env
       | _ ->
@@ -909,14 +957,14 @@ let rec stmt (state: state) match_value: state =
 
   | Sbreak ->
     begin match state.prog.brk, state.prog.cont with
-    | [], [] -> assert false
+    | [], [] -> Loc.errorm ~loc "SyntaxError: 'break' outside loop"
     | e1::k1, _e2::k2 -> mk_state state ~prog_main:e1 ~prog_brk:k1 ~prog_cont:k2
     | _ -> assert false
     end
 
   | Scontinue ->
     begin match state.prog.cont with
-    | [] -> assert false
+    | [] -> Loc.errorm ~loc "SyntaxError: 'continue' outside loop"
     | e::_ -> mk_state state ~prog_main:e
     end
 
@@ -928,7 +976,7 @@ and block (state: state) match_value =
     | Ddef (id, params, _, b) ->
       Hashtbl.replace (get_current_env state).funcs id.id_str ((List.map (fun (e: Py_ast.ident) -> e.id_str) params), b);
       state
-    | _ -> assert false
+    | _ -> state
 
 let step (state: state): state =
   match state.prog.main with
@@ -937,7 +985,9 @@ let step (state: state): state =
       let state = mk_state state ~prog_main:k in
       block state s
 
-let little_steps path =
+let interpreter (path:string) (input: string -> string) (print: string -> unit): unit =
+  print_ref := print;
+  input_ref := input;
   let c = open_in path in
   let file = Py_lexer.parse path c in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
@@ -949,4 +999,7 @@ let little_steps path =
   done
 
 
-let () = little_steps Sys.argv.(1)
+let () =
+  let input = fun s -> Printf.printf "%s" s; read_line () in
+  let print = fun s -> Printf.printf "%s" s in
+  interpreter Sys.argv.(1) input print

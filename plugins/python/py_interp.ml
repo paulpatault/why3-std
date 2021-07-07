@@ -138,6 +138,245 @@ module Pprinter =
 
 open Pprinter
 
+
+let transform_idx v idx =
+  if BigInt.sign idx < 0 then BigInt.add (BigInt.of_int (Vector.length v)) idx else idx
+
+let rec py_compare v1 v2 ~loc =
+  match v1, v2 with
+  | Ebool b1,   Ebool b2   -> Bool.compare b1 b2
+  | Eint n1,    Eint n2    -> BigInt.compare (BigInt.of_string n1) (BigInt.of_string n2)
+  | Estring s1, Estring s2 -> String.compare s1 s2
+  | Evector l1, Evector l2 ->
+        let vtol v =
+          let rec aux acc = function
+            | -1 -> acc
+            | i -> aux (get_vec v i :: acc) (i-1)
+          in aux [] (Vector.length v - 1) in
+        List.compare (py_compare ~loc) (vtol l1) (vtol l2)
+  | _ ->
+      Loc.errorm ~loc
+        "TypeError: comparison not supported between instances of '%a' and '%a'"
+        type_to_string v1 type_to_string v2
+
+module Primitives =
+  struct
+
+    type t = (string, loc:Loc.position -> atom list -> atom) Hashtbl.t
+    let list_func_table:t = Hashtbl.create 6
+    let std_func_table:t = Hashtbl.create 6
+
+    let vector_to_list v =
+      let rec aux idx acc =
+        if idx = Vector.length v then List.rev acc
+        else
+          aux (idx + 1) ((Vector.get v idx)::acc)
+      in
+      aux 0 []
+
+    let input ~loc = function
+      | [c] -> Estring (!input_ref (asprintf "%a" const_to_string c))
+      | []  -> Estring (!input_ref "")
+      | l   -> Loc.errorm ~loc
+          "TypeError: input expected at most 1 argument, got %d" (List.length l)
+
+    let int ~loc = function
+      | [Eint i] -> Eint i
+      | [Ebool b] ->
+          if b then Eint "1"
+          else Eint "0"
+      | [Estring s] ->
+          begin try Eint (BigInt.of_string s |> BigInt.to_string)
+          with Failure _ ->
+            Loc.errorm ~loc
+            "ValueError: invalid literal for int() with base 10: '%s'" s
+          end
+      | [v] -> Loc.errorm ~loc
+          "int() argument must be a string, a number or a bool, not '%a'"
+          type_to_string v
+      | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
+
+    (* let print ~loc vl =
+      let rec aux = function
+        | [v] -> !print_ref (asprintf "%a@." print_value v)
+        | v::lv -> !print_ref (asprintf "%a " print_value v); aux lv
+        | [] -> ()
+      in aux vl;
+      Vnone *)
+
+    let randint ~loc = function
+      | [Eint lo; Eint hi] ->
+          let lo = BigInt.of_string lo in
+          let hi = BigInt.of_string hi in
+          let lo' = BigInt.to_int lo in
+          let hi' = BigInt.to_int hi in
+          if BigInt.compare lo hi > 0
+          then Loc.errorm ~loc "ValueError: empty range for randint(%d, %d)" lo' hi';
+          Eint (BigInt.of_int (Random.int (hi' - lo' + 1) + lo') |> BigInt.to_string)
+      | [v1; v2] -> Loc.errorm ~loc
+          "TypeError: randint() arguments must be int, not '%a' and '%a'"
+          type_to_string v1 type_to_string v2
+      | l -> Loc.errorm ~loc "TypeError: randint expected 2 arguments, got %d" (List.length l)
+
+  let range ~loc vl =
+      let aux lo hi =
+        let lo' = BigInt.to_int lo in
+        let hi' = BigInt.to_int hi in
+        if BigInt.compare lo hi > 0
+        then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" lo' hi'
+        else
+          let v = Vector.make (hi' - lo') (Eint "0") in
+          for i=lo' to hi'-1 do
+            set_vec v (i - lo') (Eint (BigInt.of_int i |> BigInt.to_string));
+          done;
+          Evector v
+      in
+      match vl with
+        | [Eint hi] ->
+            aux BigInt.zero (BigInt.of_string hi)
+        | [v] ->
+            Loc.errorm ~loc "TypeError: range() arguments must be int, not '%a'" type_to_string v
+        | [Eint lo; Eint hi] ->
+            aux (BigInt.of_string lo) (BigInt.of_string hi)
+        | [v1; v2] ->
+            Loc.errorm ~loc
+              "TypeError: range() arguments must be int, not '%a' and '%a'"
+              type_to_string v1 type_to_string v2
+        | [Eint le; Eint ri; Eint step] ->
+            let le = BigInt.of_string le |> BigInt.to_int in
+            let ri = BigInt.of_string ri |> BigInt.to_int in
+            let step = BigInt.of_string step |> BigInt.to_int in
+            if (le > ri || step <= 0) && (ri > le || step >= 0)
+            then Loc.errorm ~loc "ValueError: empty range for range(%d, %d)" le ri step
+            else
+              let len = (ri - le) / step + if (ri -le) mod step <> 0 then 1 else 0 in
+              let v = Vector.make len (Eint "0") in
+              for i=0 to len-1 do
+                set_vec v i (Eint (BigInt.of_int (le + i * step) |> BigInt.to_string));
+              done;
+              Evector v
+        | [v1; v2; v3] ->
+            Loc.errorm ~loc
+              "TypeError: range() arguments must be int, not '%a', '%a' and '%a'"
+              type_to_string v1 type_to_string v2 type_to_string v3
+        | [] ->
+            Loc.errorm ~loc "TypeError: range expected at least 1 argument, got 0"
+        | l ->
+            Loc.errorm ~loc
+              "TypeError: range expected at most 3 arguments, got %d"
+              (List.length l)
+
+    let type_error m args i =
+      sprintf "TypeError: list.%s() takes exactly %s argument (%d given)" m args i
+
+    let attribute_error t m =
+      sprintf "AttributeError: '%s' object has no attribute '%s'"
+        (asprintf "%a" type_to_string t) m
+
+    let pop ~loc = function
+      | [Evector v] ->
+          begin try Vector.pop v
+          with Vector.Empty ->
+            Loc.errorm ~loc "IndexError: pop from empty list"
+          end
+      | Evector _v::l ->
+          Loc.errorm ~loc "%s" (type_error "pop" "zero" (List.length l))
+      | v::_l ->
+          Loc.errorm ~loc "%s" (attribute_error v "pop")
+      | [] -> assert false
+
+    let append ~loc = function
+      | [Evector v; x] -> Vector.push v x; Enone
+      | Evector _v::l -> Loc.errorm ~loc "%s" (type_error "append" "one" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "append")
+      | [] -> assert false
+
+    let copy ~loc = function
+      | [Evector l] -> Evector (Vector.copy l)
+      | Evector _v::l -> Loc.errorm ~loc "%s" (type_error "copy" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "copy")
+      | [] -> assert false
+
+    let clear ~loc = function
+      | [Evector l] -> Vector.clear l; Enone
+      | Evector _v::l -> Loc.errorm ~loc "%s" (type_error "clear" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "clear")
+      | [] -> assert false
+
+    let reverse ~loc = function
+      | [Evector l] ->
+          let len = Vector.length l in
+          let n = (len / 2) - 1 in
+          for i=0 to n do
+            let temp = get_vec l i in
+            set_vec l i (get_vec l (len - i - 1));
+            set_vec l (len - i - 1) temp
+          done;
+          Enone
+      | Evector _v::l -> Loc.errorm ~loc "%s" (type_error "reverse" "zero" (List.length l))
+      | v::_l -> Loc.errorm ~loc "%s" (attribute_error v "reverse")
+      | [] -> assert false
+
+    let sort ~loc = function
+      | [Evector l] ->
+          Vector.sort (py_compare ~loc) l;
+          Enone
+      | Evector _v::l ->
+          Loc.errorm ~loc "%s" (type_error "sort" "zero" (List.length l))
+      | v::_l ->
+          Loc.errorm ~loc "%s" (attribute_error v "sort")
+      | [] -> assert false
+
+    let slice ~loc vl =
+      let aux lo hi l =
+        if lo < 0 then Loc.errorm ~loc "ValueError: list index out of range"
+        else if hi > Vector.length l then
+          Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
+        else if hi < lo then
+          Loc.errorm ~loc "ValueError: empty range for list[%d:%d]" lo hi
+        else
+          let len = hi - lo in
+          Evector (Vector.sub l lo len)
+      in
+      match vl with
+        | [Evector l; Enone; Enone] ->
+            aux 0 (Vector.length l) l
+        | [Evector l; Enone; Eint hi] ->
+            let hi = BigInt.of_string hi in
+            aux 0 (transform_idx l hi |> BigInt.to_int) l
+        | [Evector l; Eint lo; Enone] ->
+            let lo = BigInt.of_string lo in
+            aux (transform_idx l lo |> BigInt.to_int) (Vector.length l) l
+        | [Evector l; Eint lo; Eint hi] ->
+            let lo = BigInt.of_string lo in
+            let hi = BigInt.of_string hi in
+            let lo = transform_idx l lo |> BigInt.to_int in
+            let hi = transform_idx l hi |> BigInt.to_int in
+            aux lo hi l
+        | Evector _v::l ->
+            Loc.errorm ~loc "%s" (type_error "slice" "two" (List.length l))
+        | v::_l ->
+            Loc.errorm ~loc "%s" (attribute_error v "slice")
+        | [] -> assert false
+
+    let () =
+      Hashtbl.add list_func_table "pop" pop;
+      Hashtbl.add list_func_table "append" append;
+      Hashtbl.add list_func_table "copy" copy;
+      Hashtbl.add list_func_table "clear" clear;
+      Hashtbl.add list_func_table "reverse" reverse;
+      Hashtbl.add list_func_table "sort" sort;
+
+      Hashtbl.add std_func_table "int" int;
+      (* Hashtbl.add std_func_table "print" print; *)
+      Hashtbl.add std_func_table "range" range;
+      Hashtbl.add std_func_table "randint" randint;
+      Hashtbl.add std_func_table "slice" slice;
+      Hashtbl.add std_func_table "input" input;
+
+  end
+
+
 let mk_new_env () =
   { vars = Hashtbl.create 10; funcs = Hashtbl.create 10 }
 
@@ -427,34 +666,79 @@ let expr (state: state) match_value: state =
       mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
-  | Ecall (f, el) ->
+  | Ecall (id, el) ->
+    let not_const () =
+      let f e =
+        let expr = mk_expr (Ecall(id, [e])) ~loc in
+        [mk_Dstmt (Seval expr) ~loc]
+      in
+      let expr = mk_expr (Elist el) ~loc in
+      let stmt = mk_Dstmt (Seval expr) ~loc in
+      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+    in
+
     begin try
-      let params, b = Hashtbl.find (get_current_env state).funcs f.id_str in
+    let f = Hashtbl.find Primitives.std_func_table id.id_str in
+    match el with
+      | [{expr_desc=Econst (Evector params)}] ->
+        let expr = mk_expr (Econst (f ~loc (Primitives.vector_to_list params))) ~loc in
+        let stmt = mk_Dstmt (Seval expr) ~loc in
+        mk_state state ~prog_main:(stmt::state.prog.main)
+      | [] ->
+        let expr = mk_expr (Econst (f ~loc [])) ~loc in
+        let stmt = mk_Dstmt (Seval expr) ~loc in
+        mk_state state ~prog_main:(stmt::state.prog.main)
+      | _ -> not_const ()
+    with Not_found ->
+    begin try
+
+      let params_id, b = Hashtbl.find (get_current_env state).funcs id.id_str in
 
       begin match el with
-        | [{expr_desc=Econst (Evector v)}] ->
+        | [{expr_desc=Econst (Evector params)}] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           let idx = ref 0 in
-          if List.length params <> Vector.length v then assert false
+          if List.length params_id <> Vector.length params then assert false
           else
-            List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
+            List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get params !idx)) ~loc); incr idx) params_id;
             mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
         | [] ->
           let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
           mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+        | _ -> not_const ()
+      end
+    with Not_found -> assert false end
+    end
+
+  | Edot (l, id, params) ->
+    begin try
+      let f = Hashtbl.find Primitives.list_func_table id.id_str in
+      begin match l.expr_desc, params with
+        | Econst (Evector _v as l), [{expr_desc=Econst (Evector params)}] ->
+          let params = l::(Primitives.vector_to_list params) in
+          let expr = mk_expr (Econst (f ~loc params)) ~loc in
+          let stmt = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog_main:(stmt::state.prog.main)
+        | Econst (Evector v), [] ->
+          let expr = mk_expr (Econst (f ~loc [])) ~loc in
+          let stmt = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog_main:(stmt::state.prog.main)
         | _ ->
           let f e =
-            let expr = mk_expr (Ecall(f, [e])) ~loc in
-            [mk_Dstmt (Seval expr) ~loc]
+            begin match e.expr_desc with
+              | Econst (Evector v) ->
+                let l, params = get_hd_tl_vec ~loc:e.expr_loc v in
+                let expr = mk_expr (Edot(l, id, [params])) ~loc in
+                [mk_Dstmt (Seval expr) ~loc]
+              | _ -> assert false
+            end
           in
-          let expr = mk_expr (Elist el) ~loc in
+          let expr = mk_expr (Elist (l::params)) ~loc in
           let stmt = mk_Dstmt (Seval expr) ~loc in
           mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
       end
     with Not_found -> assert false end
-
-  | Edot (e, id, params) -> assert false
-
+  
 let rec stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
   match match_value.stmt_desc with

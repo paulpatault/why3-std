@@ -35,6 +35,111 @@ type state = {
   env: env list;
 }
 
+
+
+module Pprinter =
+  struct
+    let type_to_string fmt = function
+      | Enone     -> fprintf fmt "NoneType"
+      | Ebool _   -> fprintf fmt "bool"
+      | Eint _    -> fprintf fmt "int"
+      | Estring _ -> fprintf fmt "str"
+      | Evector _   -> fprintf fmt "list"
+
+    let binop_to_string fmt = function
+      | Badd -> fprintf fmt "+"
+      | Bsub -> fprintf fmt "-"
+      | Bmul -> fprintf fmt "*"
+      | Bdiv -> fprintf fmt "//"
+      | Bmod -> fprintf fmt "%s" "%"
+      | Beq  -> fprintf fmt "=="
+      | Bneq -> fprintf fmt "!="
+      | Blt  -> fprintf fmt "<"
+      | Ble  -> fprintf fmt "<="
+      | Bgt  -> fprintf fmt ">"
+      | Bge  -> fprintf fmt ">="
+      | Band -> fprintf fmt "and"
+      | Bor  -> fprintf fmt  "or"
+
+    let unop_to_string fmt = function
+      | Uneg -> fprintf fmt "-"
+      | Unot -> fprintf fmt "not"
+
+    let rec const_to_string fmt = function
+      | Enone     -> fprintf fmt "None"
+      | Ebool b   -> if b then fprintf fmt "True" else fprintf fmt "False"
+      | Eint s    -> fprintf fmt "%s" s
+      | Estring s    -> fprintf fmt "%s" s
+      | Evector v -> fprintf fmt "[%a]" list_to_string (v, 0)
+
+    and list_to_string fmt (vec, i) =
+      if i = Vector.length vec then ()
+      else if i + 1 = Vector.length vec
+      then fprintf fmt "%a" const_to_string (get_vec vec i)
+      else fprintf fmt "%a, %a" const_to_string (get_vec vec i) list_to_string (vec, (i+1))
+
+    let rec expr_to_string fmt e =
+      match e.expr_desc with
+      | Econst a -> const_to_string fmt a
+      | Eident i -> fprintf fmt "i"
+      | Ebinop (b, e1, e2) ->
+        fprintf fmt "(%a %a %a)" binop_to_string b expr_to_string e1 expr_to_string e2
+      | Eunop (u, e) ->
+        fprintf fmt "(%a %a)" unop_to_string u expr_to_string e
+      | Ecall (i, el) -> (*TODO i*)
+        fprintf fmt "function_i_(%a)" expr_list_to_string el
+      | Edot (e, i, el) -> (*TODO i*)
+        fprintf fmt "%a._i_(%a)" expr_to_string e expr_list_to_string el
+      | Elist el ->
+        fprintf fmt "[%a]" expr_list_to_string el
+      | Emake (e1, e2) ->
+        fprintf fmt "[%a] * %a" expr_to_string e1 expr_to_string e2
+      | Eget (e1, e2) ->
+        fprintf fmt "%a[%a]" expr_to_string e1 expr_to_string e2
+    and expr_list_to_string fmt = function
+      | [] -> ()
+      | [e] -> fprintf fmt "%a" expr_to_string e
+      | e::k -> fprintf fmt "%a, %a" expr_to_string e expr_list_to_string k
+
+    let rec stmt_to_string fmt s =
+      match s.stmt_desc with
+      | Sblock b ->
+        block_to_string fmt b
+      | Sif (e, b1, b2) ->
+        fprintf fmt "if %a:@.   %a@.else:@.   %a@." expr_to_string e block_to_string b1 block_to_string b2
+      | Sreturn e ->
+        fprintf fmt "return %a@." expr_to_string e
+      | Sassign (i, e) ->
+        fprintf fmt "_i_ = %a@." expr_to_string e
+      | Swhile (e, _, _, b) ->
+        fprintf fmt "while %a:@.%a@." expr_to_string e block_to_string b
+      | Sfor (i, e, _, b) ->
+        fprintf fmt "for _i_ in %a:@.%a@." expr_to_string e block_to_string b
+      | Seval e ->
+        expr_to_string fmt e
+      | Sset (e1, e2, e3) ->
+        fprintf fmt "%a[%a] = %a@." expr_to_string e1 expr_to_string e2 expr_to_string e3
+      | Sbreak -> fprintf fmt "break@."
+      | Scontinue -> fprintf fmt "continue@."
+      | _ -> assert false
+
+    and stmt_list_to_string fmt = function
+      | [] -> ()
+      | [e] -> fprintf fmt "%a" stmt_to_string e
+      | e::k -> fprintf fmt "%a, %a" stmt_to_string e stmt_list_to_string k
+
+    and decl_to_string fmt = function
+      | Ddef _ | Dimport _ | Dlogic _ -> ()
+      | Dstmt s -> stmt_to_string fmt s
+
+    and block_to_string fmt = function
+      | [] -> ()
+      | [e] -> fprintf fmt "%a@." decl_to_string e
+      | e::k -> fprintf fmt "%a@.%a" decl_to_string e block_to_string k
+  end
+
+open Pprinter
+
 let mk_new_env () =
   { vars = Hashtbl.create 10; funcs = Hashtbl.create 10 }
 
@@ -50,20 +155,8 @@ let py_div_mod n1 n2 =
     (q, r)
 
 let py_div n1 n2 = fst (py_div_mod n1 n2)
+
 let py_mod n1 n2 = snd (py_div_mod n1 n2)
-
-let rec const_to_string = function
-  | Enone     -> "None"
-  | Ebool b   -> if b then "True" else "False"
-  | Eint s    -> s
-  | Estring s -> s
-  | Evector v -> Printf.sprintf "[%s]" (list_to_string v 0)
-
-and list_to_string vec i =
-  if i = Vector.length vec then ""
-  else if i + 1 = Vector.length vec
-  then Printf.sprintf "%s" (const_to_string (get_vec vec i))
-  else Printf.sprintf "%s, %s" (const_to_string (get_vec vec i)) (list_to_string vec (i+1))
 
 let bool const =
   match const with
@@ -87,8 +180,8 @@ let rec py_compare v1 v2 ~loc =
     List.compare (py_compare ~loc) (vtol v1) (vtol v2)
   | _ ->
     Loc.errorm ~loc
-      "TypeError: comparison not supported between instances of '%s' and '%s'"
-      (const_to_string v1) (const_to_string v2)
+      "TypeError: comparison not supported between instances of '%a' and '%a'"
+      const_to_string v1 const_to_string v2
 
 let binop_comp ~loc = function
   | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0
@@ -162,7 +255,7 @@ let expr (state: state) match_value: state =
   match match_value.expr_desc with
   | Econst c ->
     begin match state.stack with
-    | [] -> Printf.printf "%s\n" (const_to_string c); state
+    | [] -> Printf.printf "%s\n" (asprintf "%a" const_to_string c); state
     | f::k ->
       let app = f match_value in
       mk_state state ~stack:k ~prog_main:(app@state.prog.main)
@@ -387,21 +480,45 @@ let stmt (state: state) match_value: state =
     mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
 
   | Sfor (id, e, _inv, b) ->
+
+    let hd =
+      match get_hd state.prog.cont with
+      | Dstmt ({stmt_desc=Sfor(_, _, _, b);_} as stmt)::_ -> Some b, Some stmt
+      | _          -> None, None
+    in
+
+    let first =
+      match hd with
+      | Some h, _ -> not (h == b)
+      | _         -> true in
+
+    let prog_brk, prog_cont =
+      if first then
+        state.prog.main::state.prog.brk, (Dstmt match_value::state.prog.main)::state.prog.cont
+      else
+        let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
+        let state = mk_state state ~prog_brk ~prog_cont in
+        state.prog.main::state.prog.brk, (Dstmt match_value::state.prog.main)::state.prog.cont
+    in
+
     begin match e.expr_desc with
     | Econst (Evector v) ->
-        if Vector.is_empty v then state
+        if Vector.is_empty v
+        then
+          let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
+          mk_state state ~prog_brk ~prog_cont
         else
-          let hd, tl = get_hd_tl_vec v e.expr_loc in
+          let hd_vec, tl_vec = get_hd_tl_vec v e.expr_loc in
           let env = (get_current_env state).vars in
-          Hashtbl.replace env id.id_str hd;
-          let stmt = mk_Dstmt (Sfor(id, tl, _inv, b)) ~loc in
+          Hashtbl.replace env id.id_str hd_vec;
+          let stmt = mk_Dstmt (Sfor(id, tl_vec, _inv, b)) ~loc in
           let prog_main = b@stmt::state.prog.main in
-          mk_state state ~prog_main
+          mk_state state ~prog_main ~prog_brk ~prog_cont
     | Econst _ -> assert false
     | _v ->
       let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
       let e = mk_Dstmt (Seval e) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
       end
 
   | Swhile (cond, _inv, _var, b) ->
@@ -434,8 +551,8 @@ let stmt (state: state) match_value: state =
         mk_state state ~prog_brk ~prog_cont
     | _ ->
       let f e = [mk_Dstmt (Swhile(e, _inv, _var, b)) ~loc] in
-      let stmt = mk_Dstmt (Seval cond) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main) ~prog_brk ~prog_cont
+      let e = mk_Dstmt (Seval cond) ~loc in
+      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
     end
 
   | Sset (e1, e2, e3) ->
@@ -494,6 +611,8 @@ let little_steps path =
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
+    let _ = read_line () in
+    Printf.printf "%s\n" (asprintf "%a" block_to_string prog.main);
     state := step !state;
   done
 

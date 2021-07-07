@@ -337,26 +337,40 @@ let expr (state: state) match_value: state =
     end
 
   | Ecall (f, el) ->
-    let rec eval_list r el state = match el with
-      | []      -> state
-      | e :: [] ->
-        let expr = mk_expr (Econst Enone) ~loc in
-        let none = mk_Dstmt (Seval expr) ~loc in
-        (fun v -> r := v :: !r; [none]) :: state
-      | e :: el -> eval_list r el ((fun v -> r := v :: !r; []) :: state)
-    in
-    let r = ref [] in
-    state.stack <- eval_list r [] state.stack;
-    assert false
-    (* let r = ref [] in
-    let e::el = el in
-    st := (fun v -> r:=v::!r; [Enone])::st;
-    eval_list r el ((fun _ -> ... calculer l'appel à partir de !r ...) :: state) *)
+    begin try
+      let params, b = Hashtbl.find (get_current_env state).funcs f.id_str in
+
+      let not_const () = 
+        let f e =
+          let expr = mk_expr (Ecall(f, [e])) ~loc in
+          [mk_Dstmt (Seval expr) ~loc]
+        in
+        let expr = mk_expr (Elist el) ~loc in
+        let stmt = mk_Dstmt (Seval expr) ~loc in
+        mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+      in
+
+      begin match el with
+        | [e] ->
+          begin match e.expr_desc with
+            | Econst (Evector v) ->
+              let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
+              let idx = ref 0 in
+              List.iter (fun id -> Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get v !idx)) ~loc); incr idx) params;
+              mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+            | _ -> not_const ()
+            end
+        | [] -> 
+          let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
+          mk_state state ~prog_main:(b@state.prog.main) ~prog_ret:(state.prog.main::state.prog.ret) ~env:(envf::state.env)
+        | _ -> not_const ()
+          
+      end
+    with Not_found -> assert false end
 
   | Edot (e, id, params) -> assert false
 
-let stmt (state: state) match_value: state =
-  let match_value = match match_value with Dstmt x -> x | _ -> assert false in
+let rec stmt (state: state) match_value: state =
   let loc = match_value.stmt_loc in
   match match_value.stmt_desc with
   | Sblock b ->
@@ -464,12 +478,34 @@ let stmt (state: state) match_value: state =
       mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
     end
 
-  | Sreturn _ -> assert false
-
+  | Sreturn e ->
+    begin match e.expr_desc with
+      | Econst _c ->
+        let env = match state.env with
+        | _::[] -> assert false
+        | _::env -> env
+        | _ -> assert false
+        in
+        let stmt = mk_Dstmt (Seval e) ~loc in
+        let prog_main, prog_ret =
+          match state.prog.ret with
+            | ret::tr -> (stmt::ret), tr
+            | _ -> assert false
+        in
+        mk_state state ~prog_main ~prog_ret ~env
+      | _ ->
+        let f e =
+          [mk_Dstmt (Sreturn e) ~loc]
+        in
+        let stmt = mk_Dstmt (Seval e) ~loc in
+        mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+    end
+    
+  
   | Sbreak ->
     begin match state.prog.brk, state.prog.cont with
     | [], [] -> assert false
-    | e1::k1, e2::k2 -> mk_state state ~prog_main:e1 ~prog_brk:k1 ~prog_cont:k2
+    | e1::k1, _e2::k2 -> mk_state state ~prog_main:e1 ~prog_brk:k1 ~prog_cont:k2
     | _ -> assert false
     end
 
@@ -481,12 +517,20 @@ let stmt (state: state) match_value: state =
 
   | Sassert _ | Slabel _ -> state
 
+and block (state: state) match_value =
+  match match_value with
+    | Dstmt x -> stmt state x
+    | Ddef (id, params, _, b) ->
+      Hashtbl.replace (get_current_env state).funcs id.id_str ((List.map (fun (e: Py_ast.ident) -> e.id_str) params), b);
+      state
+    | _ -> assert false
+
 let step (state: state): state =
   match state.prog.main with
   | [] -> assert false
   | s::k ->
       let state = mk_state state ~prog_main:k in
-      stmt state s
+      block state s
 
 let little_steps path =
   let c = open_in path in

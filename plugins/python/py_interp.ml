@@ -201,6 +201,14 @@ module Primitives =
           Pprinter.type_const v
       | l -> Loc.errorm ~loc "TypeError: int expected 1 argument, got %d" (List.length l)
 
+    let len ~loc = function
+      | [Evector v] ->
+          Eint (Vector.length v |> string_of_int)
+      | v::[] ->
+          Loc.errorm ~loc "TypeError: object of type '%a' has no len()" Pprinter.type_const v
+      | l ->
+          Loc.errorm ~loc "TypeError: len() takes exactly one argument (%d given)" (List.length l)
+
     let print ~loc vl =
       let rec aux = function
         | [v] -> !print_ref (asprintf "%a@." Pprinter.const v)
@@ -373,6 +381,7 @@ module Primitives =
       Hashtbl.add list_func_table "sort" sort;
 
       Hashtbl.add std_func_table "int" int;
+      Hashtbl.add std_func_table "len" len;
       Hashtbl.add std_func_table "print" print;
       Hashtbl.add std_func_table "range" range;
       Hashtbl.add std_func_table "randint" randint;

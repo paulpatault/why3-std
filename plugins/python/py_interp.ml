@@ -4,8 +4,6 @@ open Py_ast
 open Format
 
 let () = Random.self_init ()
-let print_ref = ref (fun (_s:string) -> ())
-let input_ref = ref (fun (s:string) -> s)
 
 let get_vec v i =
   if i < Vector.length v && i >= 0 then Vector.get v i
@@ -34,6 +32,10 @@ type state = {
   prog: prog;
   env: env list;
 }
+
+let print_ref = ref (fun (_s:string) -> ())
+let input_ref = ref (fun (s:string) (_state:state) -> ())
+let continue = ref true
 
 module Pprinter =
   struct
@@ -179,9 +181,10 @@ module Primitives =
       in
       aux 0 []
 
-    let input ~loc = function
-      | [c] -> Estring (!input_ref (asprintf "%a" Pprinter.const c))
-      | []  -> Estring (!input_ref "")
+    let input ~loc vl state =
+      match vl with
+      | [c] -> !input_ref (asprintf "%a" Pprinter.const c) state
+      | []  -> !input_ref "" state
       | l   -> Loc.errorm ~loc
           "TypeError: input expected at most 1 argument, got %d" (List.length l)
 
@@ -386,7 +389,6 @@ module Primitives =
       Hashtbl.add std_func_table "range" range;
       Hashtbl.add std_func_table "randint" randint;
       Hashtbl.add std_func_table "slice" slice;
-      Hashtbl.add std_func_table "input" input;
 
   end
 
@@ -704,59 +706,72 @@ let expr (state: state) match_value: state =
       mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
     in
 
-    begin try
-    let f = Hashtbl.find Primitives.std_func_table id.id_str in
-    match el with
-      | [{expr_desc=Econst (Evector params)}] ->
-        let expr = mk_expr (Econst (f ~loc (Primitives.vector_to_list params))) ~loc in
-        let stmt = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog_main:(stmt::state.prog.main)
-      | [] ->
-        let expr = mk_expr (Econst (f ~loc [])) ~loc in
-        let stmt = mk_Dstmt (Seval expr) ~loc in
-        mk_state state ~prog_main:(stmt::state.prog.main)
-      | _ -> not_const ()
-    with Not_found ->
-    begin try
-
-      let params_id, b = Hashtbl.find (get_current_env state).funcs id.id_str in
-
-      begin match el with
+    if id.id_str = "input" then
+      match el with
         | [{expr_desc=Econst (Evector params)}] ->
-          let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
-          let idx = ref 0 in
-          if List.length params_id <> Vector.length params
-          then
-            Loc.errorm ~loc
-              "TypeError: %a() takes %d positional argument but %d were given"
-              Pprinter.ident id (List.length params_id) (Vector.length params)
-          else
-            List.iter
-              (fun id ->
-                Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get params !idx)) ~loc);
-                incr idx)
-              params_id;
+          Primitives.input ~loc (Primitives.vector_to_list params) state;
+          continue := false;
+          state
+        | [] ->
+          Primitives.input ~loc [] state;
+          continue := false;
+          state
+        | _ -> not_const ()
+    else
+
+      begin try
+      let f = Hashtbl.find Primitives.std_func_table id.id_str in
+      match el with
+        | [{expr_desc=Econst (Evector params)}] ->
+          let expr = mk_expr (Econst (f ~loc (Primitives.vector_to_list params))) ~loc in
+          let stmt = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog_main:(stmt::state.prog.main)
+        | [] ->
+          let expr = mk_expr (Econst (f ~loc [])) ~loc in
+          let stmt = mk_Dstmt (Seval expr) ~loc in
+          mk_state state ~prog_main:(stmt::state.prog.main)
+        | _ -> not_const ()
+      with Not_found ->
+      begin try
+
+        let params_id, b = Hashtbl.find (get_current_env state).funcs id.id_str in
+
+        begin match el with
+          | [{expr_desc=Econst (Evector params)}] ->
+            let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
+            let idx = ref 0 in
+            if List.length params_id <> Vector.length params
+            then
+              Loc.errorm ~loc
+                "TypeError: %a() takes %d positional argument but %d were given"
+                Pprinter.ident id (List.length params_id) (Vector.length params)
+            else
+              List.iter
+                (fun id ->
+                  Hashtbl.add envf.vars id (mk_expr (Econst (Vector.get params !idx)) ~loc);
+                  incr idx)
+                params_id;
+              mk_state state
+                ~prog_main:(b@state.prog.main)
+                ~prog_ret:(state.prog.main::state.prog.ret)
+                ~env:(envf::state.env)
+          | [] ->
+            if List.length params_id <> 0 then
+              Loc.errorm ~loc
+                "TypeError: %a() takes %d positional argument but 0 were given"
+                Pprinter.ident id (List.length params_id)
+            else
+
+            let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
             mk_state state
               ~prog_main:(b@state.prog.main)
               ~prog_ret:(state.prog.main::state.prog.ret)
               ~env:(envf::state.env)
-        | [] ->
-          if List.length params_id <> 0 then
-            Loc.errorm ~loc
-              "TypeError: %a() takes %d positional argument but 0 were given"
-              Pprinter.ident id (List.length params_id)
-          else
-
-          let envf = {vars = Hashtbl.create 10; funcs = (get_current_env state).funcs} in
-          mk_state state
-            ~prog_main:(b@state.prog.main)
-            ~prog_ret:(state.prog.main::state.prog.ret)
-            ~env:(envf::state.env)
-        | _ -> not_const ()
+          | _ -> not_const ()
+        end
+      with Not_found ->
+        Loc.errorm ~loc "NameError: name '%a' is not defined" Pprinter.ident id end
       end
-    with Not_found ->
-      Loc.errorm ~loc "NameError: name '%a' is not defined" Pprinter.ident id end
-    end
 
   | Edot (l, id, params) ->
     begin try
@@ -994,14 +1009,14 @@ let step (state: state): state =
       let state = mk_state state ~prog_main:k in
       block state s
 
-let interpreter (path:string) (input: string -> string) (print: string -> unit): unit =
+let interpreter (path:string) (input: string -> state -> unit) (print: string -> unit): unit =
   print_ref := print;
   input_ref := input;
   let c = open_in path in
   let file = Py_lexer.parse path c in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
-  while !state.stack <> [] || !state.prog.main <> [] do
+  while (!state.stack <> [] || !state.prog.main <> []) && !continue do
     (* let _ = read_line () in
     Printf.printf "-----------\n%s\n-----------" (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
     state := step !state;
@@ -1009,6 +1024,6 @@ let interpreter (path:string) (input: string -> string) (print: string -> unit):
 
 
 let () =
-  let input = fun s -> Printf.printf "%s" s; read_line () in
+  let input = fun s state -> () in
   let print = fun s -> Printf.printf "%s" s in
   interpreter Sys.argv.(1) input print

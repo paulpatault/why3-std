@@ -28,7 +28,7 @@ type prog = {
 }
 
 type state = {
-  mutable stack: (expr -> block) list;
+  stack: ((expr -> block) list) list;
   prog: prog;
   env: env list;
 }
@@ -488,6 +488,16 @@ let get_current_env state =
   | [] -> assert false
   | env::_ -> env
 
+let append_to_current_stack state f =
+  match state.stack with
+  | [] -> [f]::[]
+  | stack::rest -> (f::stack)::rest
+
+let concat_to_current_stack state fl =
+  match state.stack with
+  | [] -> fl::[]
+  | stack::rest -> (fl@stack)::rest
+
 let loop_out = function
   | _::brk, _::cont -> brk, cont
   | [], []          -> [], []
@@ -510,9 +520,10 @@ let expr (state: state) match_value: state =
   | Econst c ->
     begin match state.stack with
     | [] -> state
-    | f::k ->
+    | []::stack -> state
+    | (f::k)::rest ->
       let app = f match_value in
-      mk_state state ~stack:k ~prog_main:(app@state.prog.main)
+      mk_state state ~stack:(k::rest) ~prog_main:(app@state.prog.main)
     end
 
   | Elist l ->
@@ -547,7 +558,7 @@ let expr (state: state) match_value: state =
       in
 
       let l = List.map (fun e -> mk_Dstmt (Seval e) ~loc:e.expr_loc) l in
-      mk_state state ~stack:(stack@f::state.stack) ~prog_main:(l@state.prog.main)
+      mk_state state ~stack:(concat_to_current_stack state (stack@[f])) ~prog_main:(l@state.prog.main)
     end
 
   | Ebinop (b, e1, e2) ->
@@ -591,7 +602,7 @@ let expr (state: state) match_value: state =
           [mk_Dstmt (Seval expr) ~loc]
         in
         let e = mk_Dstmt (Seval e2) ~loc:e2.expr_loc in
-        mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+        mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
       end
     | _e1, _e2 ->
       let f e1 =
@@ -599,7 +610,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc:e1.expr_loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     end
 
   | Eunop (u, e) ->
@@ -623,7 +634,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     end
 
   | Eident (x: Why3.Ptree.ident)  ->
@@ -655,7 +666,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
 
     | _e1, _e2 ->
       let f e1 =
@@ -663,7 +674,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     end
 
   | Eget (e1, e2) ->
@@ -692,7 +703,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
 
     | _e1, _e2 ->
       let f e1 =
@@ -700,7 +711,7 @@ let expr (state: state) match_value: state =
         [mk_Dstmt (Seval expr) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     end
 
   | Ecall (id, el) ->
@@ -711,7 +722,7 @@ let expr (state: state) match_value: state =
       in
       let expr = mk_expr (Elist el) ~loc in
       let stmt = mk_Dstmt (Seval expr) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(stmt::state.prog.main)
     in
 
     if id.id_str = "input" then
@@ -763,6 +774,7 @@ let expr (state: state) match_value: state =
                 ~prog_main:(b@state.prog.main)
                 ~prog_ret:(state.prog.main::state.prog.ret)
                 ~env:(envf::state.env)
+                ~stack:([]::state.stack)
           | [] ->
             if List.length params_id <> 0 then
               Loc.errorm ~loc
@@ -775,6 +787,7 @@ let expr (state: state) match_value: state =
               ~prog_main:(b@state.prog.main)
               ~prog_ret:(state.prog.main::state.prog.ret)
               ~env:(envf::state.env)
+              ~stack:([]::state.stack)
           | _ -> not_const ()
         end
       with Not_found ->
@@ -806,7 +819,7 @@ let expr (state: state) match_value: state =
           in
           let expr = mk_expr (Elist (l::params)) ~loc in
           let stmt = mk_Dstmt (Seval expr) ~loc in
-          mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+          mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(stmt::state.prog.main)
       end
     with Not_found ->
       Loc.errorm ~loc "AttributeError: 'list' object has no attribute '%a'" Pprinter.ident id
@@ -830,7 +843,7 @@ let rec stmt (state: state) match_value: state =
       let f e = [mk_Dstmt (Sif(e, b1, b2)) ~loc] in
       let e = mk_expr e ~loc in
       let stmt = mk_Dstmt (Seval e) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(stmt::state.prog.main)
     end
 
   | Sassign (id, e) ->
@@ -840,7 +853,7 @@ let rec stmt (state: state) match_value: state =
       []
     in
     let e = mk_Dstmt (Seval e) ~loc in
-    mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+    mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
 
   | Sfor (id, e, _inv, b) ->
 
@@ -890,7 +903,7 @@ let rec stmt (state: state) match_value: state =
       let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
       let e = mk_Dstmt (Seval e) ~loc in
       let prog_cont = (Dstmt match_value::state.prog.main)::state.prog.cont in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
       end
 
   | Swhile (cond, _inv, _var, b) ->
@@ -924,7 +937,7 @@ let rec stmt (state: state) match_value: state =
     | _ ->
       let f e = [mk_Dstmt (Swhile(e, _inv, _var, b)) ~loc] in
       let e = mk_Dstmt (Seval cond) ~loc in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
     end
 
   | Sset (e1, e2, e3) ->
@@ -946,7 +959,7 @@ let rec stmt (state: state) match_value: state =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e2) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     | Econst non_vec, Econst _, Econst c ->
       Loc.errorm ~loc:e1.expr_loc
         "TypeError: '%a' object is not subscriptable" Pprinter.type_const non_vec
@@ -955,13 +968,13 @@ let rec stmt (state: state) match_value: state =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e1) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     | _e1, _e2, _e3 ->
       let f e3 =
         [mk_Dstmt (Sset (e1, e2, e3)) ~loc]
       in
       let e = mk_Dstmt (Seval e3) ~loc; in
-      mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main)
+      mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(e::state.prog.main)
     end
 
   | Sreturn e ->
@@ -972,19 +985,25 @@ let rec stmt (state: state) match_value: state =
         | _::env -> env
         | _ -> assert false
         in
+
+        let stack = match state.stack with
+          | [] -> Loc.errorm ~loc "SyntaxError: 'return' outside function"
+          | _::stack -> stack
+        in
+
         let stmt = mk_Dstmt (Seval e) ~loc in
         let prog_main, prog_ret =
           match state.prog.ret with
             | ret::tr -> (stmt::ret), tr
             | [] -> Loc.errorm ~loc "SyntaxError: 'return' outside function"
         in
-        mk_state state ~prog_main ~prog_ret ~env
+        mk_state state ~prog_main ~prog_ret ~env ~stack
       | _ ->
         let f e =
           [mk_Dstmt (Sreturn e) ~loc]
         in
         let stmt = mk_Dstmt (Seval e) ~loc in
-        mk_state state ~stack:(f::state.stack) ~prog_main:(stmt::state.prog.main)
+        mk_state state ~stack:(append_to_current_stack state f) ~prog_main:(stmt::state.prog.main)
     end
 
   | Sbreak ->
@@ -1024,12 +1043,12 @@ let interpreter (path:string) (input: string -> state -> unit) (print: string ->
   let file = Py_lexer.parse path c in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
-  while (!state.stack <> [] || !state.prog.main <> []) && !continue do
-    state := step !state;
-    let _ = read_line () in
+  while (!state.stack <> [[]] || !state.prog.main <> []) && !continue do
+  let _ = read_line () in
     Printf.printf "-----Pile %d------\n%s\n-----------"
       (List.length !state.stack)
       (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
+    state := step !state;
   done
 
 

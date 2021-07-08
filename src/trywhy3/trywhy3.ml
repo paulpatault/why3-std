@@ -20,6 +20,7 @@ module File = Js_of_ocaml.File
 module Worker = Js_of_ocaml.Worker
 module Dom_html = Js_of_ocaml.Dom_html
 module XmlHttpRequest = Js_of_ocaml.XmlHttpRequest
+module Sys_js = Js_of_ocaml.Sys_js
 
 
 let (!!) = Js.string
@@ -1335,7 +1336,6 @@ module Controller =
 
 end
 
-
 module Terminal = struct
 
   let id_tab = "why3-term-tab"
@@ -1359,21 +1359,15 @@ module Terminal = struct
   let init () =
     el_div ##. innerHTML := !!"$> python your_file.py</br>"
 
+  let clear () =
+    el_div ##. innerHTML := !!"$>"
+
   let print str =
     el_div ##. innerHTML :=
       !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "</br>");
     el_div ##. scrollTop := el_div ##. scrollHeight
 
-  let clear () =
-    el_div ##. innerHTML := !!"$>"
-
-  let wait () =
-    while !input_str = "" do
-      ()
-    done
-
-  let input str =
-    input_str := "";
+  let input str _state =
     let old_inner = Js.to_string (el_div ##. innerHTML) in
     el_div ##. innerHTML :=
       !!(old_inner
@@ -1388,10 +1382,12 @@ module Terminal = struct
           el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ !input_str););
         Js._false);
 
-    el_div ##. scrollTop := el_div ##. scrollHeight;
-    
-    !input_str
-
+    el_div ##. scrollTop := el_div ##. scrollHeight
+  
+  let execute () =
+    let code = Js.to_string (Editor.get_value ()) in 
+    Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code;
+    Printf.printf "%s\n" code
 end
 
 
@@ -1415,7 +1411,14 @@ let () =
   KeyBinding.add_global ~ctrl:Js._true ~shift:Js._true 90 Editor.redo;
   KeyBinding.add_global ~ctrl:Js._true 89 Editor.redo;
 
-  ToolBar.add_action Buttons.button_execute (fun () -> Controller.why3_execute (); Terminal.focus ());
+  ToolBar.add_action Buttons.button_execute (
+    fun () ->
+      if !FormatList.selected_format = "python" then
+        (Terminal.execute ();
+        Terminal.focus ())
+      else
+      Controller.why3_execute ();
+  );
   KeyBinding.add_global ~alt:Js._true 69 Controller.why3_execute;
 
   ToolBar.add_action Buttons.button_compile (fun () -> Controller.(why3_parse (!alt_ergo_min_steps)));
@@ -1425,11 +1428,6 @@ let () =
   KeyBinding.add_global ~alt:Js._true 73 Controller.stop;
 
   KeyBinding.add_global ~alt:Js._true 32 (fun () -> Controller.(why3_custom_transform (Split(!alt_ergo_min_steps))) ignore ());
-
-  KeyBinding.add_global ~ctrl:Js._true 74 (fun () -> Terminal.print "coucou");
-  KeyBinding.add_global ~ctrl:Js._true 72 (fun () -> let _ = Terminal.input "input:\n" in ());
-  KeyBinding.add_global ~ctrl:Js._true 13 (fun () -> ());
-
 
   ToolBar.add_action Buttons.button_settings Dialogs.(show setting_dialog);
   ToolBar.add_action Buttons.button_help (

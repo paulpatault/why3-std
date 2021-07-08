@@ -849,30 +849,39 @@ let rec stmt (state: state) match_value: state =
 
     begin match e.expr_desc with
     | Econst (Evector v) ->
-        if Vector.is_empty v
-        then
-          let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
-          mk_state state ~prog_brk ~prog_cont
-        else
-          let hd_vec, tl_vec = get_hd_tl_vec v e.expr_loc in
-          let env = (get_current_env state).vars in
-          Hashtbl.replace env id.id_str hd_vec;
-          let stmt = mk_Dstmt (Sfor(id, tl_vec, _inv, b)) ~loc in
-          let prog_main = b@stmt::state.prog.main in
+        begin
+            try
+              let hd_vec = mk_expr (Econst (Vector.pop v)) ~loc in
+              let tl_vec = mk_expr (Econst (Evector v)) ~loc in
 
-          let prog_cont =
-            match state.prog.cont with
-            | [] -> assert false
-            | hd::tl ->
-              if not first then (stmt::state.prog.main)::tl
-              else (stmt::state.prog.main)::state.prog.cont
-          in
+              let env = (get_current_env state).vars in
+              Hashtbl.replace env id.id_str hd_vec;
+              let stmt = mk_Dstmt (Sfor(id, tl_vec, _inv, b)) ~loc in
+              let prog_main = b@stmt::state.prog.main in
 
-          mk_state state ~prog_main ~prog_brk ~prog_cont
+              let prog_cont =
+                match state.prog.cont with
+                | [] -> assert false
+                | hd::tl ->
+                    if not first then (stmt::state.prog.main)::tl
+                  else (stmt::state.prog.main)::state.prog.cont
+              in
+
+              mk_state state ~prog_main ~prog_brk ~prog_cont
+            with Vector.Empty ->
+              let prog_brk, prog_cont = loop_out (state.prog.brk, state.prog.cont) in
+              mk_state state ~prog_brk ~prog_cont
+        end
     | Econst c ->
       Loc.errorm ~loc:e.expr_loc "TypeError: '%a' object is not iterable" Pprinter.const c
     | _v ->
-      let f e = [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc] in
+      let f e =
+        match e.expr_desc with
+        | Econst x ->
+          let _ = Primitives.reverse [x] ~loc in
+          [mk_Dstmt (Sfor(id, e, _inv, b)) ~loc]
+        | _ -> assert false
+      in
       let e = mk_Dstmt (Seval e) ~loc in
       let prog_cont = (Dstmt match_value::state.prog.main)::state.prog.cont in
       mk_state state ~stack:(f::state.stack) ~prog_main:(e::state.prog.main) ~prog_brk ~prog_cont
@@ -1011,10 +1020,10 @@ let interpreter (path:string) (input: string -> string) (print: string -> unit):
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while !state.stack <> [] || !state.prog.main <> [] do
     state := step !state;
-    let _ = read_line () in
+    (* let _ = read_line () in
     Printf.printf "-----Pile %d------\n%s\n-----------"
       (List.length !state.stack)
-      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
+      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
   done
 
 

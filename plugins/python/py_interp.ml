@@ -95,7 +95,7 @@ module Pprinter =
       | Ecall (i, el) ->
         fprintf fmt "%a(%a)" ident i expr_list el
       | Edot (e, i, el) ->
-        fprintf fmt "%a.%a(%a)" ident i expr e expr_list el
+        fprintf fmt "%a.%a(%a)" expr e ident i expr_list el
       | Elist el ->
         fprintf fmt "[%a]" expr_list el
       | Emake (e1, e2) ->
@@ -132,7 +132,7 @@ module Pprinter =
         fprintf fmt "%a[%a] = %a@ " expr e1 expr e2 expr e3
       | Sbreak -> fprintf fmt "break"
       | Scontinue -> fprintf fmt "continue"
-      | _ -> assert false
+      | _ -> ()
 
     and decl fmt = function
       | Ddef _ | Dimport _ | Dlogic _ -> ()
@@ -142,6 +142,7 @@ module Pprinter =
       | [] -> ()
       | [e] -> fprintf fmt "%a@," decl e
       | e::k -> fprintf fmt "%a@,%a" decl e block k
+
   end
 
 
@@ -515,32 +516,39 @@ let expr (state: state) match_value: state =
     end
 
   | Elist l ->
-    let rec eval_list r el stack =
-      let f ret v =
-        match v.expr_desc with
-        | Econst c ->
-          Vector.push !r c; ret
-        | _ -> assert false
+    begin match l with
+    | [] ->
+        let vec = Econst (Evector (Vector.create ~capacity:0 ~dummy:Enone)) in
+        let dstmt = mk_Dstmt (Seval (mk_expr vec ~loc)) ~loc in
+        mk_state state ~prog_main:(dstmt::state.prog.main)
+    | _  ->
+      let rec eval_list r el stack =
+        let f ret v =
+          match v.expr_desc with
+          | Econst c ->
+            Vector.push !r c; ret
+          | _ -> assert false
+        in
+        match el with
+        | []      -> stack
+        | _e :: [] ->
+          let expr = mk_expr (Econst Enone) ~loc in
+          let none = mk_Dstmt (Seval expr) ~loc in
+          f [none] :: stack
+        | _e :: el -> eval_list r el (f [] :: stack)
       in
-      match el with
-      | []      -> stack
-      | _e :: [] ->
-        let expr = mk_expr (Econst Enone) ~loc in
-        let none = mk_Dstmt (Seval expr) ~loc in
-        f [none] :: stack
-      | _e :: el -> eval_list r el (f [] :: stack)
-    in
 
-    let r = ref (Vector.create ~capacity:0 ~dummy:Enone) in
-    let stack = List.rev (eval_list r l []) in
+      let r = ref (Vector.create ~capacity:0 ~dummy:Enone) in
+      let stack = List.rev (eval_list r l []) in
 
-    let f _ =
-      let expr = mk_expr  (Econst (Evector !r)) ~loc in
-      [mk_Dstmt (Seval expr) ~loc]
-    in
+      let f _ =
+        let expr = mk_expr (Econst (Evector !r)) ~loc in
+        [mk_Dstmt (Seval expr) ~loc]
+      in
 
-    let l = List.map (fun e -> mk_Dstmt (Seval e) ~loc:e.expr_loc) l in
-    mk_state state ~stack:(stack@f::state.stack) ~prog_main:(l@state.prog.main)
+      let l = List.map (fun e -> mk_Dstmt (Seval e) ~loc:e.expr_loc) l in
+      mk_state state ~stack:(stack@f::state.stack) ~prog_main:(l@state.prog.main)
+    end
 
   | Ebinop (b, e1, e2) ->
     begin match e1.expr_desc, e2.expr_desc with
@@ -1017,9 +1025,11 @@ let interpreter (path:string) (input: string -> state -> unit) (print: string ->
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
   while (!state.stack <> [] || !state.prog.main <> []) && !continue do
-    (* let _ = read_line () in
-    Printf.printf "-----------\n%s\n-----------" (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
     state := step !state;
+    let _ = read_line () in
+    Printf.printf "-----Pile %d------\n%s\n-----------"
+      (List.length !state.stack)
+      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
   done
 
 

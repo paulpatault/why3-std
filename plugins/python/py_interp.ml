@@ -754,6 +754,9 @@ let expr (state: state) match_value: state =
       begin try
 
         let params_id, b = Hashtbl.find (get_current_env state).funcs id.id_str in
+        let none_expr = mk_expr (Econst Enone) ~loc in
+        let ret_none = mk_Dstmt (Sreturn none_expr) ~loc in
+        let b = b@[ret_none] in
 
         begin match el with
           | [{expr_desc=Econst (Evector params)}] ->

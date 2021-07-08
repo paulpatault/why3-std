@@ -307,3 +307,4 @@ pvsbin/
 trywhy3.tar.gz
 
 plugins/python/test_interp.py
+bench/bench_interp

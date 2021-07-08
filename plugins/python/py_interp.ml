@@ -461,17 +461,12 @@ let binop_logic = function
 
 let mk_state ?stack ?prog_main ?prog_brk ?prog_cont ?prog_ret ?env state =
   let stack = match stack with None -> state.stack | Some stack -> stack in
-  let prog_main = match prog_main with None -> state.prog.main | Some prog -> prog in
-  let prog_brk = match prog_brk with None -> state.prog.brk | Some prog -> prog in
-  let prog_cont = match prog_cont with None -> state.prog.cont | Some prog -> prog in
-  let prog_ret = match prog_ret with None -> state.prog.ret | Some prog -> prog in
+  let main = match prog_main with None -> state.prog.main | Some prog -> prog in
+  let brk = match prog_brk with None -> state.prog.brk | Some prog -> prog in
+  let cont = match prog_cont with None -> state.prog.cont | Some prog -> prog in
+  let ret = match prog_ret with None -> state.prog.ret | Some prog -> prog in
   let env = match env with None -> state.env | Some env -> env in
-  let prog = {
-    main=prog_main;
-    brk=prog_brk;
-    cont=prog_cont;
-    ret=prog_ret;
-  } in
+  let prog = {main; brk; cont; ret} in
   {stack; prog; env}
 
 let mk_Dstmt stmt_desc ~loc =
@@ -485,17 +480,17 @@ let mk_expr expr_desc ~loc =
 
 let get_current_env state =
   match state.env with
-  | [] -> assert false
   | env::_ -> env
+  | [] -> assert false
 
 let append_to_current_stack state f =
   match state.stack with
-  | [] -> [f]::[]
+  | [] -> [[f]]
   | stack::rest -> (f::stack)::rest
 
 let concat_to_current_stack state fl =
   match state.stack with
-  | [] -> fl::[]
+  | [] -> [fl]
   | stack::rest -> (fl@stack)::rest
 
 let loop_out = function
@@ -1054,12 +1049,12 @@ let interpreter (path:string) (input: string -> state -> unit) (print: string ->
   let c = open_in path in
   let file = Py_lexer.parse path c in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
-  let state = ref {stack=[]; prog=prog; env=[mk_new_env ()]} in
+  let state = ref {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
   while (!state.stack <> [[]] || !state.prog.main <> []) && !continue do
-  let _ = read_line () in
+  (* let _ = read_line () in
     Printf.printf "-----Pile %d------\n%s\n-----------"
       (List.length !state.stack)
-      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main));
+      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
     state := step !state;
   done
 

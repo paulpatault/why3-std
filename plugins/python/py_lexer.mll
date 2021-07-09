@@ -178,7 +178,7 @@ and string_quote = parse
     Why3.Loc.set_file file lb;
     stack := [0];  (* reinitialise indentation stack *)
     Why3.Loc.with_location (Py_parser.file next_token) lb
-  
+
   let parse_str code =
     let lb = Lexing.from_string code in
     Why3.Loc.set_file "" lb;

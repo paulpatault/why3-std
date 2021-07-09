@@ -1054,8 +1054,3 @@ let read_file filename =
   let s = really_input_string ch (in_channel_length ch) in
   close_in ch;
   s
-
-(* let () =
-  let print = fun s -> Printf.printf "%s" s in
-  let code = read_file Sys.argv.(1) in
-  interpreter code print *)

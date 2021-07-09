@@ -13,6 +13,8 @@
 open Worker_proto
 open Bindings
 
+let i = Py_interp.interpreter
+
 module Js = Js_of_ocaml.Js
 module JSU = Js_of_ocaml.Js.Unsafe
 module Dom = Js_of_ocaml.Dom

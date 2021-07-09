@@ -527,7 +527,7 @@ PLUG_PARSER = genequlin dimacs
 PLUG_PRINTER =
 PLUG_TRANSFORM =
 PLUG_TPTP = tptp_ast tptp_parser tptp_typing tptp_lexer tptp_printer
-PLUG_PYTHON = py_ast py_parser py_lexer py_main
+PLUG_PYTHON = py_ast py_parser py_lexer py_main py_interp
 PLUG_MICROC = mc_ast mc_parser mc_lexer mc_printer mc_main
 PLUG_CFG = cfg_ast cfg_parser cfg_lexer cfg_main
 
@@ -1614,7 +1614,7 @@ TRYWHY3MODULES = $(addprefix src/trywhy3/, $(TRYWHY3_FILES))
 TRYWHY3DEP = $(addsuffix .dep, $(TRYWHY3MODULES))
 TRYWHY3CMO = $(addsuffix .cmo, $(TRYWHY3MODULES))
 
-$(TRYWHY3DEP) $(TRYWHY3CMO): INCLUDES += -I src/trywhy3
+$(TRYWHY3DEP) $(TRYWHY3CMO): INCLUDES += -I src/trywhy3 -I plugins/python
 
 TRYWHY3_PACK = \
 	trywhy3.js trywhy3.html trywhy3.css \
@@ -1635,7 +1635,9 @@ trywhy3: src/trywhy3/trywhy3.js src/trywhy3/why3_worker.js
 src/trywhy3/trywhy3.js: src/trywhy3/trywhy3.byte
 	js_of_ocaml $(JSOO_DEBUG) $<
 
-src/trywhy3/trywhy3.byte: $(addprefix src/trywhy3/, json_base.cmo json_parser.cmo json_lexer.cmo bindings.cmo worker_proto.cmo shortener.cmo trywhy3.cmo)
+src/trywhy3/trywhy3.byte: $(WHY3CMA) $(PYTHONCMO)\
+		$(addprefix src/trywhy3/, json_base.cmo json_parser.cmo json_lexer.cmo bindings.cmo worker_proto.cmo shortener.cmo trywhy3.cmo)
+		# $(addprefix src/trywhy3/, bindings.cmo worker_proto.cmo why3_worker.cmo)
 	$(OCAMLFIND) ocamlc -o $@ -package js_of_ocaml -package menhirLib -linkpkg $^
 
 src/trywhy3/why3_worker.js: src/trywhy3/why3_worker.byte src/trywhy3/trywhy3.conf src/trywhy3/try_alt_ergo.drv

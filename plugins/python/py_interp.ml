@@ -1043,11 +1043,10 @@ let step (state: state): state =
       let state = mk_state state ~prog_main:k in
       block state s
 
-let interpreter (path:string) (input: string -> state -> unit) (print: string -> unit): unit =
+let interpreter (code:string) (input: string -> state -> unit) (print: string -> unit): unit =
   print_ref := print;
   input_ref := input;
-  let c = open_in path in
-  let file = Py_lexer.parse path c in
+  let file = Py_lexer.parse_str code in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
   while (!state.stack <> [[]] || !state.prog.main <> []) && !continue do
@@ -1058,8 +1057,14 @@ let interpreter (path:string) (input: string -> state -> unit) (print: string ->
     state := step !state;
   done
 
+let read_file filename =
+  let ch = open_in filename in
+  let s = really_input_string ch (in_channel_length ch) in
+  close_in ch;
+  s
 
 let () =
   let input = fun s state -> () in
   let print = fun s -> Printf.printf "%s" s in
-  interpreter Sys.argv.(1) input print
+  let code = read_file Sys.argv.(1) in
+  interpreter code input print

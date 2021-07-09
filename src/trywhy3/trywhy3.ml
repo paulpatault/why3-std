@@ -1386,8 +1386,7 @@ module Terminal = struct
   
   let execute () =
     let code = Js.to_string (Editor.get_value ()) in 
-    Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code;
-    Printf.printf "%s\n" code
+    Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code
 end
 
 

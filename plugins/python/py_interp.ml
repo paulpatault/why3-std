@@ -209,11 +209,12 @@ module Primitives =
           Loc.errorm ~loc "TypeError: len() takes exactly one argument (%d given)" (List.length l)
 
     let print ~loc vl =
-      let rec aux = function
-        | [v] -> !print_ref (asprintf "%a@." Pprinter.const v)
-        | v::lv -> !print_ref (asprintf "%a " Pprinter.const v); aux lv
-        | [] -> ()
-      in aux vl;
+      let rec aux fmt = function
+        | [v]   -> fprintf fmt "%a" Pprinter.const v
+        | v::lv -> fprintf fmt "%a %a" Pprinter.const v aux lv
+        | []    -> ()
+      in
+      !print_ref (asprintf "%a" aux vl);
       Enone
 
     let randint ~loc = function

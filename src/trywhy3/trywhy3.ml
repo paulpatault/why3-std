@@ -28,6 +28,7 @@ let (!!) = Js.string
 let int_of_js_string = Js.parseInt
 let js_string_of_int n = (Js.number_of_float (float_of_int n)) ## toString
 let terminal_print = ref (fun (_s:string) -> ())
+let terminal_print_error = ref (fun (_s:string) -> ())
 let terminal_input = ref (fun (_s:string) -> ())
 
 module AsHtml =
@@ -744,7 +745,10 @@ let handle_why3_message o =
       let r = Editor.mk_range l1 b l2 e in
       Editor.update_error_marker (Some (Editor.add_marker !!"why3-error" r, r));
       TaskList.print_error s;
-      Editor.set_annotations [ (l1, b, Js.string s, !!"error") ]
+      Editor.set_annotations [ (l1, b, Js.string s, !!"error") ];
+      if !FormatList.selected_format = "python" then
+        !terminal_print_error s
+        
 
   | Result sl ->
       TaskList.clear ();
@@ -1363,15 +1367,21 @@ module Terminal = struct
     then (display (); Tabs.focus id_tab)
 
   let init () =
-    el_div ##. innerHTML := !!"$> python try_why3.py</br>"
+    el_div ##. innerHTML := !!"$> python try_why3.py<br>"
 
   let clear () =
     el_div ##. innerHTML := !!"$>"
 
   let print str =
+    let end_line = Str.regexp "\\\n" in
+    let str = Str.global_replace end_line "<br>" str in
     el_div ##. innerHTML :=
-      !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "</br>");
+      !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "<br>");
     el_div ##. scrollTop := el_div ##. scrollHeight
+  
+  let print_error str =
+    let str = "<div style='color: red'>" ^ str ^ "</div><br>" in
+    print str
 
   let input str =
     let old_inner = Js.to_string (el_div ##. innerHTML) in
@@ -1385,7 +1395,7 @@ module Terminal = struct
       Dom.handler (fun ev ->
         if ev ##. keyCode = 13 then
           (let input_str = Js.to_string (input_el ##. value) in
-          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ input_str ^ "</br>");
+          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ input_str ^ "<br>");
           (Controller.get_why3_worker ()) ## postMessage (marshal (ContinueInput input_str));
           );
         Js._false);
@@ -1399,6 +1409,7 @@ module Terminal = struct
   
   let () =
     terminal_print := print;
+    terminal_print_error := print_error;
     terminal_input := input
 
 end

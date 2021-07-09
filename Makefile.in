@@ -1636,7 +1636,7 @@ src/trywhy3/trywhy3.js: src/trywhy3/trywhy3.byte
 	js_of_ocaml $(JSOO_DEBUG) $<
 
 src/trywhy3/trywhy3.byte: $(addprefix src/trywhy3/, json_base.cmo json_parser.cmo json_lexer.cmo bindings.cmo worker_proto.cmo shortener.cmo trywhy3.cmo)
-	$(OCAMLFIND) ocamlc -o $@ -package js_of_ocaml -package menhirLib -linkpkg $^
+	$(OCAMLFIND) ocamlc -o $@ -package js_of_ocaml -package str -package menhirLib -linkpkg $^
 
 src/trywhy3/why3_worker.js: src/trywhy3/why3_worker.byte src/trywhy3/trywhy3.conf src/trywhy3/try_alt_ergo.drv
 	js_of_ocaml $(JSOO_DEBUG) --extern-fs -I . -I src/trywhy3 \

@@ -397,9 +397,20 @@ let interpreter () =
     while !state.stack <> [[]] || !state.prog.main <> [] do
       state := Py_interp.step !state;
     done
-  with Py_interp.Input (message, n_state) ->
-    state := n_state;
-    W.send (InputPython message)
+  with
+    | Py_interp.Input (message, n_state) ->
+      state := n_state;
+      W.send (InputPython message)
+    | Loc.Located(loc,e') ->
+      let _, l, b, e = Loc.get loc in
+        W.send (ErrorLoc ((l-1,b, l-1, e),
+		     Pp.sprintf
+		        "error line %d, columns %d-%d: %a" l b e
+		        Exn_printer.exn_printer e'))
+    | e ->
+      W.send (Error (Pp.sprintf
+		    "unexpected exception: %a (%s)" Exn_printer.exn_printer e
+		    (Printexc.to_string e)))
 
 let continue_interpreter s =
   let expr = Py_interp.mk_expr (Econst (Estring s)) ~loc:Why3.Loc.dummy_position in

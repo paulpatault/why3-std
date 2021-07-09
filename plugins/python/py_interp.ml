@@ -163,11 +163,22 @@ let rec py_compare v1 v2 ~loc =
             | -1 -> acc
             | i -> aux (get_vec v i :: acc) (i-1)
           in aux [] (Vector.length v - 1) in
-        List.compare (py_compare ~loc) (vtol l1) (vtol l2)
+        py_compare_list (vtol l1) (vtol l2) ~loc
   | _ ->
       Loc.errorm ~loc
         "TypeError: comparison not supported between instances of '%a' and '%a'"
         Pprinter.type_const v1 Pprinter.type_const v2
+
+and py_compare_list l1 l2 ~loc =
+  match l1, l2 with
+  | [], [] -> 0
+  | [], _::_ -> -1
+  | _::_, [] -> 1
+  | a1::l1, a2::l2 ->
+    let c = py_compare a1 a2 ~loc in
+    if c <> 0 then c
+    else py_compare_list l1 l2 ~loc
+
 
 module Primitives =
   struct
@@ -415,23 +426,6 @@ let bool const =
   | Eint i    -> let i = BigInt.of_string i in not (BigInt.eq i BigInt.zero)
   | Estring s -> s <> ""
   | Evector v -> not (Vector.is_empty v)
-
-let rec py_compare v1 v2 ~loc =
-  match v1, v2 with
-  | Ebool b1,   Ebool b2   -> Bool.compare b1 b2
-  | Eint n1,    Eint n2    -> BigInt.compare (BigInt.of_string n1) (BigInt.of_string n2)
-  | Estring s1, Estring s2 -> String.compare s1 s2
-  | Evector v1, Evector v2 ->
-    let vtol v =
-      let rec aux acc = function
-        | -1 -> acc
-        | i -> aux (get_vec v i :: acc) (i-1)
-      in aux [] (Vector.length v - 1) in
-    List.compare (py_compare ~loc) (vtol v1) (vtol v2)
-  | _ ->
-    Loc.errorm ~loc
-      "TypeError: comparison not supported between instances of '%a' and '%a'"
-      Pprinter.const v1 Pprinter.const v2
 
 let binop_comp ~loc = function
   | Beq  -> fun e1 e2 -> py_compare ~loc e1 e2 =  0

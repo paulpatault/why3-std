@@ -5,6 +5,7 @@ open Format
 
 let () = Random.self_init ()
 
+
 let get_vec v i =
   if i < Vector.length v && i >= 0 then Vector.get v i
   else raise (Invalid_argument "Vector.get")
@@ -33,8 +34,9 @@ type state = {
   env: env list;
 }
 
+exception Input of state
+
 let print_ref = ref (fun (_s:string) -> ())
-let input_ref = ref (fun (s:string) (_state:state) -> ())
 let continue = ref true
 
 module Pprinter =
@@ -182,12 +184,12 @@ module Primitives =
       in
       aux 0 []
 
-    let input ~loc vl state =
+    (* let input ~loc vl state =
       match vl with
       | [c] -> !input_ref (asprintf "%a" Pprinter.const c) state
       | []  -> !input_ref "" state
       | l   -> Loc.errorm ~loc
-          "TypeError: input expected at most 1 argument, got %d" (List.length l)
+          "TypeError: input expected at most 1 argument, got %d" (List.length l) *)
 
     let int ~loc = function
       | [Eint i] -> Eint i
@@ -723,13 +725,15 @@ let expr (state: state) match_value: state =
     if id.id_str = "input" then
       match el with
         | [{expr_desc=Econst (Evector params)}] ->
-          Primitives.input ~loc (Primitives.vector_to_list params) state;
-          continue := false;
-          state
+          (* Primitives.input ~loc (Primitives.vector_to_list params) state; *)
+            raise (Input state)
+          (* continue := false; *)
+          (* state *)
         | [] ->
-          Primitives.input ~loc [] state;
-          continue := false;
-          state
+          (* Primitives.input ~loc [] state; *)
+          (* continue := false;
+          state *)
+            raise (Input state)
         | _ -> not_const ()
     else
 
@@ -1043,9 +1047,18 @@ let step (state: state): state =
       let state = mk_state state ~prog_main:k in
       block state s
 
-let interpreter (code:string) (input: string -> state -> unit) (print: string -> unit): unit =
+
+let init_interpreter (code:string) (print: string -> unit): state =
   print_ref := print;
-  input_ref := input;
+  (* input_ref := input; *)
+  let file = Py_lexer.parse_str code in
+  let prog = {main=file; brk=[]; ret=[]; cont=[]} in
+  let state = {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
+  state
+
+let interpreter (code:string) (print: string -> unit): unit =
+  print_ref := print;
+  (* input_ref := input; *)
   let file = Py_lexer.parse_str code in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
@@ -1063,8 +1076,7 @@ let read_file filename =
   close_in ch;
   s
 
-let () =
-  let input = fun s state -> () in
+(* let () =
   let print = fun s -> Printf.printf "%s" s in
   let code = read_file Sys.argv.(1) in
-  interpreter code input print
+  interpreter code print *)

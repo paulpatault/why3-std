@@ -1387,10 +1387,12 @@ module Terminal = struct
         Js._false);
 
     el_div ##. scrollTop := el_div ##. scrollHeight
-  
+
   let execute () =
-    let code = Js.to_string (Editor.get_value ()) in 
-    Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code
+    let code = Js.to_string (Editor.get_value ()) in
+    (* Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code *)
+    (Controller.get_why3_worker()) ## postMessage (marshal (ExecutePython code))
+
 end
 
 

@@ -387,6 +387,15 @@ let why3_run f format lang code =
 		      "unexpected exception: %a (%s)" Exn_printer.exn_printer e
 		      (Printexc.to_string e)))
 
+let interpreter code =
+  let print = fun s -> Printf.printf "%s\n" s in
+  let state = ref (Py_interp.init_interpreter code print) in
+  try
+    while !state.stack <> [[]] || !state.prog.main <> [] do
+      state := Py_interp.step !state;
+    done
+  with Py_interp.Input state -> ()
+
 let handle_message = function
   | Transform (Split steps, id) -> why3_split steps id
   | Transform (Prove steps, id) -> why3_prove ~steps id
@@ -401,8 +410,10 @@ let handle_message = function
       Task.clear_table ();
       why3_run why3_execute format Pmodule.mlw_language code
 
-  | ExecutePython code -> ()
-  (* Py_interp.interpreter *)
+  | ExecutePython code ->
+      Task.clear_warnings ();
+      Task.clear_table ();
+      interpreter code
 
   | SetStatus (st, id) -> List.iter W.send (Task.set_status id st)
   | GetFormats ->

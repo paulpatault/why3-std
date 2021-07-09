@@ -34,7 +34,7 @@ type state = {
   env: env list;
 }
 
-exception Input of string
+exception Input of string * state
 
 let print_ref = ref (fun (_s:string) -> ())
 let continue = ref true
@@ -718,9 +718,9 @@ let expr (state: state) match_value: state =
     if id.id_str = "input" then
       match el with
         | [{expr_desc=Econst (Evector params)}] ->
-            raise (Input (asprintf "%a@." Pprinter.const (Evector params)))
+            raise (Input (asprintf "%a@." Pprinter.const (Evector params), state))
         | [] ->
-            raise (Input "")
+            raise (Input ("", state))
         | _ -> not_const ()
     else
 

@@ -397,7 +397,8 @@ let interpreter () =
     while !state.stack <> [[]] || !state.prog.main <> [] do
       state := Py_interp.step !state;
     done
-  with Py_interp.Input message -> 
+  with Py_interp.Input (message, n_state) ->
+    state := n_state;
     W.send (InputPython message)
 
 let continue_interpreter s =
@@ -426,7 +427,7 @@ let handle_message = function
       let print = fun s -> W.send (PrintPython s) in
       state := Py_interp.init_interpreter code print;
       interpreter ()
-      
+
   | ContinueInput s -> continue_interpreter s
 
   | SetStatus (st, id) -> List.iter W.send (Task.set_status id st)

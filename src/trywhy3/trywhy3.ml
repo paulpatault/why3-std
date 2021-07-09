@@ -1385,9 +1385,8 @@ module Terminal = struct
       Dom.handler (fun ev ->
         if ev ##. keyCode = 13 then
           (let input_str = Js.to_string (input_el ##. value) in
-          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ input_str);
-          (Controller.get_why3_worker ()) ## postMessage (marshal (ContinueInput input_str))
-          
+          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ input_str ^ "</br>");
+          (Controller.get_why3_worker ()) ## postMessage (marshal (ContinueInput input_str));
           );
         Js._false);
 

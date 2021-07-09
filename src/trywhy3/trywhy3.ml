@@ -1373,8 +1373,8 @@ module Terminal = struct
     el_div ##. innerHTML := !!"$>"
 
   let print str =
-    let end_line = Str.regexp "\\\n" in
-    let str = Str.global_replace end_line "<br>" str in
+    let end_line = Re.Str.regexp "\\\n" in
+    let str = Re.Str.global_replace end_line "<br>" str in
     el_div ##. innerHTML :=
       !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "<br>");
     el_div ##. scrollTop := el_div ##. scrollHeight

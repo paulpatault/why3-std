@@ -387,14 +387,24 @@ let why3_run f format lang code =
 		      "unexpected exception: %a (%s)" Exn_printer.exn_printer e
 		      (Printexc.to_string e)))
 
-let interpreter code =
-  let print = fun s -> W.send (PrintPython s) in
-  let state = ref (Py_interp.init_interpreter code print) in
+let (state: Py_interp.state ref) =
+  let (prog: Py_interp.prog) = {main=[]; brk=[]; ret=[]; cont=[]} in
+  let (state: Py_interp.state) = {stack=[[]]; prog=prog; env=[]} in
+  ref state
+
+let interpreter () =
   try
     while !state.stack <> [[]] || !state.prog.main <> [] do
       state := Py_interp.step !state;
     done
-  with Py_interp.Input state -> ()
+  with Py_interp.Input message -> 
+    W.send (InputPython message)
+
+let continue_interpreter s =
+  let expr = Py_interp.mk_expr (Econst (Estring s)) ~loc:Why3.Loc.dummy_position in
+  let stmt = Py_interp.mk_Dstmt (Seval expr) ~loc:Why3.Loc.dummy_position in
+  state := Py_interp.mk_state !state ~prog_main:(stmt::!state.prog.main);
+  interpreter ()
 
 let handle_message = function
   | Transform (Split steps, id) -> why3_split steps id
@@ -413,7 +423,11 @@ let handle_message = function
   | ExecutePython code ->
       Task.clear_warnings ();
       Task.clear_table ();
-      interpreter code
+      let print = fun s -> W.send (PrintPython s) in
+      state := Py_interp.init_interpreter code print;
+      interpreter ()
+      
+  | ContinueInput s -> continue_interpreter s
 
   | SetStatus (st, id) -> List.iter W.send (Task.set_status id st)
   | GetFormats ->

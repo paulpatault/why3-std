@@ -34,7 +34,7 @@ type state = {
   env: env list;
 }
 
-exception Input of state
+exception Input of string
 
 let print_ref = ref (fun (_s:string) -> ())
 let continue = ref true
@@ -183,13 +183,6 @@ module Primitives =
           aux (idx + 1) ((Vector.get v idx)::acc)
       in
       aux 0 []
-
-    (* let input ~loc vl state =
-      match vl with
-      | [c] -> !input_ref (asprintf "%a" Pprinter.const c) state
-      | []  -> !input_ref "" state
-      | l   -> Loc.errorm ~loc
-          "TypeError: input expected at most 1 argument, got %d" (List.length l) *)
 
     let int ~loc = function
       | [Eint i] -> Eint i
@@ -725,15 +718,9 @@ let expr (state: state) match_value: state =
     if id.id_str = "input" then
       match el with
         | [{expr_desc=Econst (Evector params)}] ->
-          (* Primitives.input ~loc (Primitives.vector_to_list params) state; *)
-            raise (Input state)
-          (* continue := false; *)
-          (* state *)
+            raise (Input (asprintf "%a@." Pprinter.const (Evector params)))
         | [] ->
-          (* Primitives.input ~loc [] state; *)
-          (* continue := false;
-          state *)
-            raise (Input state)
+            raise (Input "")
         | _ -> not_const ()
     else
 
@@ -1050,7 +1037,6 @@ let step (state: state): state =
 
 let init_interpreter (code:string) (print: string -> unit): state =
   print_ref := print;
-  (* input_ref := input; *)
   let file = Py_lexer.parse_str code in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
@@ -1058,15 +1044,10 @@ let init_interpreter (code:string) (print: string -> unit): state =
 
 let interpreter (code:string) (print: string -> unit): unit =
   print_ref := print;
-  (* input_ref := input; *)
   let file = Py_lexer.parse_str code in
   let prog = {main=file; brk=[]; ret=[]; cont=[]} in
   let state = ref {stack=[[]]; prog=prog; env=[mk_new_env ()]} in
   while (!state.stack <> [[]] || !state.prog.main <> []) && !continue do
-  (* let _ = read_line () in
-    Printf.printf "-----Pile %d------\n%s\n-----------"
-      (List.length !state.stack)
-      (asprintf "%a" Pprinter.decl (List.hd !state.prog.main)); *)
     state := step !state;
   done
 

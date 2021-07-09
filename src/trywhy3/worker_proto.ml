@@ -25,10 +25,10 @@ type why3_command =
   | Transform of transform * id
   | SetStatus of status * id
   | GetFormats
-  (* | RepInput of strong *)
+  | ContinueInput of string
 
 type why3_output =
-  | InputPython
+  | InputPython of string
   | PrintPython of string
   | Error of string (* msg *)
   | ErrorLoc of (loc * string) (* loc * msg *)

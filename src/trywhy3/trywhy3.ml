@@ -27,7 +27,8 @@ let (!!) = Js.string
 
 let int_of_js_string = Js.parseInt
 let js_string_of_int n = (Js.number_of_float (float_of_int n)) ## toString
-let terminal_print = ref (fun (s:string) -> ())
+let terminal_print = ref (fun (_s:string) -> ())
+let terminal_input = ref (fun (_s:string) -> ())
 
 module AsHtml =
   struct
@@ -725,7 +726,7 @@ module TaskList =
 let handle_why3_message o =
   let doc = Dom_html.document in
   match o with
-  | InputPython -> ()
+  | InputPython s -> !terminal_input s
 
   | PrintPython s -> !terminal_print s
 
@@ -1372,9 +1373,7 @@ module Terminal = struct
       !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "</br>");
     el_div ##. scrollTop := el_div ##. scrollHeight
 
-  let () = terminal_print := print
-
-  let input str _state =
+  let input str =
     let old_inner = Js.to_string (el_div ##. innerHTML) in
     el_div ##. innerHTML :=
       !!(old_inner
@@ -1385,17 +1384,23 @@ module Terminal = struct
     input_el ##. onkeyup :=
       Dom.handler (fun ev ->
         if ev ##. keyCode = 13 then
-          (input_str := Js.to_string (input_el ##. value);
-          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ !input_str););
+          (let input_str = Js.to_string (input_el ##. value) in
+          el_div ##. innerHTML := !!(old_inner ^ (Printf.sprintf "%s" str) ^ input_str);
+          (Controller.get_why3_worker ()) ## postMessage (marshal (ContinueInput input_str))
+          
+          );
         Js._false);
 
     el_div ##. scrollTop := el_div ##. scrollHeight
-
+  
   let execute () =
     init ();
     let code = Js.to_string (Editor.get_value ()) in
-    (* Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code *)
     (Controller.get_why3_worker()) ## postMessage (marshal (ExecutePython code))
+  
+  let () =
+    terminal_print := print;
+    terminal_input := input
 
 end
 

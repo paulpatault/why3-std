@@ -13,8 +13,6 @@
 open Worker_proto
 open Bindings
 
-let i = Py_interp.interpreter
-
 module Js = Js_of_ocaml.Js
 module JSU = Js_of_ocaml.Js.Unsafe
 module Dom = Js_of_ocaml.Dom
@@ -725,6 +723,10 @@ module TaskList =
 let handle_why3_message o =
   let doc = Dom_html.document in
   match o with
+  | InputPython -> ()
+
+  | PrintPython s -> ()
+
   | Idle | Warning [] -> ()
   | Warning lst ->
       let annot =

@@ -20,12 +20,16 @@ type transform = Prove of int | Split of int | Clean
 type why3_command =
   | ParseBuffer of string * string * int
   | ExecuteBuffer of string * string
+  | ExecutePython of string
   | ProveAll
   | Transform of transform * id
   | SetStatus of status * id
   | GetFormats
+  (* | RepInput of strong *)
 
 type why3_output =
+  | InputPython
+  | PrintPython of string
   | Error of string (* msg *)
   | ErrorLoc of (loc * string) (* loc * msg *)
   | Theory of id * string (* Theory (id, name) *)

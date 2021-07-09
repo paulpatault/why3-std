@@ -14,6 +14,7 @@
 
 let why3_conf_file = "/trywhy3.conf"
 
+
 open Why3
 open Format
 open Worker_proto
@@ -399,6 +400,10 @@ let handle_message = function
       Task.clear_warnings ();
       Task.clear_table ();
       why3_run why3_execute format Pmodule.mlw_language code
+
+  | ExecutePython code -> ()
+  (* Py_interp.interpreter *)
+
   | SetStatus (st, id) -> List.iter W.send (Task.set_status id st)
   | GetFormats ->
       let formats = Env.list_formats Env.base_language in

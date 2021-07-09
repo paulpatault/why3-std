@@ -718,7 +718,10 @@ let expr (state: state) match_value: state =
     if id.id_str = "input" then
       match el with
         | [{expr_desc=Econst (Evector params)}] ->
-            raise (Input (asprintf "%a@." Pprinter.const (Evector params)))
+            let len = Vector.length params in
+            if len < 2 then
+              raise (Input (asprintf "%a@." Pprinter.const (Vector.get params 0)))
+            else Loc.errorm ~loc "TypeError: input expected at most 1 argument, got %d" len
         | [] ->
             raise (Input "")
         | _ -> not_const ()

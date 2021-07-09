@@ -80,11 +80,11 @@ module Task =
 
     type task_info = {
         task : task_kind;
-	parent_id : id;
-	mutable status : status;
-	mutable subtasks : id list;
-	loc : why3_loc list;
-	expl : string;
+        parent_id : id;
+        mutable status : status;
+        mutable subtasks : id list;
+        loc : why3_loc list;
+        expl : string;
         pretty : string;
       }
 
@@ -172,11 +172,11 @@ module Task =
       in
       let task_info =
         { task = Task task;
-	  parent_id = parent_id;
-	  status = StNew;
-	  subtasks = [];
-	  loc = id_loc @  (collect_locs task);
-	  expl = expl;
+          parent_id = parent_id;
+          status = StNew;
+          subtasks = [];
+          loc = id_loc @  (collect_locs task);
+          expl = expl;
           pretty = task_text task;
         }
       in
@@ -187,8 +187,8 @@ module Task =
       let th_id = gen_id () in
       let tasks = Why3Task.split_theory th None None in
       let task_ids = List.fold_left (fun acc t ->
-				     let tid = register_task th_id t in
-				     tid:: acc) [] tasks in
+                                     let tid = register_task th_id t in
+                                     tid:: acc) [] tasks in
       Hashtbl.add task_table th_id  {
           task = Theory th;
           parent_id = 0;
@@ -208,26 +208,26 @@ module Task =
       let rec loop id st acc =
         match get_info_opt id with
         | Some info when info.status <> st ->
-	   info.status <- st;
+           info.status <- st;
            let acc = (UpdateStatus (st, id)) :: acc in
            begin
              match get_info_opt info.parent_id with
                None -> acc
              | Some par_info ->
-	        let has_new, has_unknown =
-	          List.fold_left
-	            (fun (an, au) id ->
-	             let info = Hashtbl.find task_table id in
-	             (an || info.status = StNew), (au || info.status = StUnknown))
-	            (false, false) par_info.subtasks
-	        in
-	        let par_status =
+                let has_new, has_unknown =
+                  List.fold_left
+                    (fun (an, au) id ->
+                     let info = Hashtbl.find task_table id in
+                     (an || info.status = StNew), (au || info.status = StUnknown))
+                    (false, false) par_info.subtasks
+                in
+                let par_status =
                   if has_new then StNew
                   else if has_unknown then StUnknown
                   else StValid
-	        in
-	        if par_info.status <> par_status then
-	          loop info.parent_id par_status acc
+                in
+                if par_info.status <> par_status then
+                  loop info.parent_id par_status acc
                 else acc
            end
         | _ -> acc
@@ -379,13 +379,13 @@ let why3_run f format lang code =
   | Loc.Located(loc,e') ->
      let _, l, b, e = Loc.get loc in
      W.send (ErrorLoc ((l-1,b, l-1, e),
-		     Pp.sprintf
-		       "error line %d, columns %d-%d: %a" l b e
-		       Exn_printer.exn_printer e'))
+                     Pp.sprintf
+                       "error line %d, columns %d-%d: %a" l b e
+                       Exn_printer.exn_printer e'))
   | e ->
      W.send (Error (Pp.sprintf
-		      "unexpected exception: %a (%s)" Exn_printer.exn_printer e
-		      (Printexc.to_string e)))
+                      "unexpected exception: %a (%s)" Exn_printer.exn_printer e
+                      (Printexc.to_string e)))
 
 let (state: Py_interp.state ref) =
   let (prog: Py_interp.prog) = {main=[]; brk=[]; ret=[]; cont=[]} in
@@ -404,13 +404,13 @@ let interpreter () =
     | Loc.Located(loc,e') ->
       let _, l, b, e = Loc.get loc in
         W.send (ErrorLoc ((l-1,b, l-1, e),
-		     Pp.sprintf
-		        "error line %d, columns %d-%d: %a" l b e
-		        Exn_printer.exn_printer e'))
+                     Pp.sprintf
+                        "error line %d, columns %d-%d: %a" l b e
+                        Exn_printer.exn_printer e'))
     | e ->
       W.send (Error (Pp.sprintf
-		    "unexpected exception: %a (%s)" Exn_printer.exn_printer e
-		    (Printexc.to_string e)))
+                    "unexpected exception: %a (%s)" Exn_printer.exn_printer e
+                    (Printexc.to_string e)))
 
 let continue_interpreter s =
   let expr = Py_interp.mk_expr (Econst (Estring s)) ~loc:Why3.Loc.dummy_position in

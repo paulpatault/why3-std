@@ -748,7 +748,7 @@ let handle_why3_message o =
       Editor.set_annotations [ (l1, b, Js.string s, !!"error") ];
       if !FormatList.selected_format = "python" then
         !terminal_print_error s
-        
+
 
   | Result sl ->
       TaskList.clear ();
@@ -1378,7 +1378,7 @@ module Terminal = struct
     el_div ##. innerHTML :=
       !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "<br>");
     el_div ##. scrollTop := el_div ##. scrollHeight
-  
+
   let print_error str =
     let str = "<div style='color: red'>" ^ str ^ "</div><br>" in
     print str
@@ -1401,12 +1401,12 @@ module Terminal = struct
         Js._false);
 
     el_div ##. scrollTop := el_div ##. scrollHeight
-  
+
   let execute () =
     init ();
     let code = Js.to_string (Editor.get_value ()) in
     (Controller.get_why3_worker()) ## postMessage (marshal (ExecutePython code))
-  
+
   let () =
     terminal_print := print;
     terminal_print_error := print_error;

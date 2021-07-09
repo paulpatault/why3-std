@@ -1435,18 +1435,25 @@ let () =
   KeyBinding.add_global ~ctrl:Js._true ~shift:Js._true 90 Editor.redo;
   KeyBinding.add_global ~ctrl:Js._true 89 Editor.redo;
 
-  ToolBar.add_action Buttons.button_execute (
-    fun () ->
-      if !FormatList.selected_format = "python" then
-        (Terminal.execute ();
-        Terminal.focus ())
-      else
-      Controller.why3_execute ();
-  );
-  KeyBinding.add_global ~alt:Js._true 69 Controller.why3_execute;
+  let f_execute () =
+    Editor.update_error_marker None;
+    if !FormatList.selected_format = "python" then
+      (Terminal.execute ();
+      Terminal.focus ())
+    else
+    Controller.why3_execute ()
+  in
 
-  ToolBar.add_action Buttons.button_compile (fun () -> Controller.(why3_parse (!alt_ergo_min_steps)));
-  KeyBinding.add_global ~alt:Js._true 82 (fun () -> Controller.(why3_parse (!alt_ergo_min_steps)));
+  ToolBar.add_action Buttons.button_execute f_execute;
+  KeyBinding.add_global ~alt:Js._true 69 f_execute;
+
+  let f_compile () =
+    Editor.update_error_marker None;
+    Controller.(why3_parse (!alt_ergo_min_steps))
+  in
+
+  ToolBar.add_action Buttons.button_compile f_compile;
+  KeyBinding.add_global ~alt:Js._true 82 f_compile;
 
   ToolBar.add_action Buttons.button_stop Controller.stop;
   KeyBinding.add_global ~alt:Js._true 73 Controller.stop;

@@ -388,7 +388,7 @@ let why3_run f format lang code =
 		      (Printexc.to_string e)))
 
 let interpreter code =
-  let print = fun s -> Printf.printf "%s\n" s in
+  let print = fun s -> W.send (PrintPython s) in
   let state = ref (Py_interp.init_interpreter code print) in
   try
     while !state.stack <> [[]] || !state.prog.main <> [] do

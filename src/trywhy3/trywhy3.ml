@@ -27,6 +27,7 @@ let (!!) = Js.string
 
 let int_of_js_string = Js.parseInt
 let js_string_of_int n = (Js.number_of_float (float_of_int n)) ## toString
+let terminal_print = ref (fun (s:string) -> ())
 
 module AsHtml =
   struct
@@ -726,7 +727,7 @@ let handle_why3_message o =
   match o with
   | InputPython -> ()
 
-  | PrintPython s -> ()
+  | PrintPython s -> !terminal_print s
 
   | Idle | Warning [] -> ()
   | Warning lst ->
@@ -1361,7 +1362,7 @@ module Terminal = struct
     then (display (); Tabs.focus id_tab)
 
   let init () =
-    el_div ##. innerHTML := !!"$> python your_file.py</br>"
+    el_div ##. innerHTML := !!"$> python try_why3.py</br>"
 
   let clear () =
     el_div ##. innerHTML := !!"$>"
@@ -1370,6 +1371,8 @@ module Terminal = struct
     el_div ##. innerHTML :=
       !! (Js.to_string (el_div ##. innerHTML) ^ str ^ "</br>");
     el_div ##. scrollTop := el_div ##. scrollHeight
+
+  let () = terminal_print := print
 
   let input str _state =
     let old_inner = Js.to_string (el_div ##. innerHTML) in
@@ -1389,6 +1392,7 @@ module Terminal = struct
     el_div ##. scrollTop := el_div ##. scrollHeight
 
   let execute () =
+    init ();
     let code = Js.to_string (Editor.get_value ()) in
     (* Sys_js.create_file ~name:"/trywhy3_input.py" ~content:code *)
     (Controller.get_why3_worker()) ## postMessage (marshal (ExecutePython code))

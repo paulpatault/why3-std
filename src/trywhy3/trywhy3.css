@@ -253,10 +253,6 @@ input[type=text] {
   outline: none;
 }
 
-.why3-term:hover {
-  background-color: darkgreen;
-}
-
 /******* CONTEXT MENU *********/
 .why3-contextmenu {
     display:none;
